@@ -396,6 +396,108 @@ class TestDetailMode:
         assert any(p.name == "petId" for p in path_params)
 
 
+# ── Component refs (requestBodies / responses) ───────────────────────────────
+
+PETSTORE_COMPONENT_REFS_JSON = json.dumps({
+    "openapi": "3.0.3",
+    "info": {"title": "Ref Test", "version": "1.0"},
+    "paths": {
+        "/pets": {
+            "post": {
+                "summary": "Create a pet",
+                "operationId": "createPet",
+                "tags": ["pets"],
+                "requestBody": {"$ref": "#/components/requestBodies/PetBody"},
+                "responses": {
+                    "201": {"$ref": "#/components/responses/PetCreated"},
+                    "422": {"$ref": "#/components/responses/ValidationError"},
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Pet": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"}
+                }
+            },
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"}
+                }
+            }
+        },
+        "requestBodies": {
+            "PetBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/Pet"}
+                    }
+                }
+            }
+        },
+        "responses": {
+            "PetCreated": {
+                "description": "Pet created",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/Pet"}
+                    }
+                }
+            },
+            "ValidationError": {
+                "description": "Validation failed",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/Error"}
+                    }
+                }
+            }
+        }
+    }
+})
+
+
+@pytest.fixture
+def component_refs_file(tmp_path):
+    p = tmp_path / "component_refs.json"
+    p.write_text(PETSTORE_COMPONENT_REFS_JSON)
+    return str(p)
+
+
+class TestComponentRefs:
+    def test_request_body_ref_resolved(self, component_refs_file):
+        r = _extract(component_refs_file, detail=True)
+        ep = r.endpoints[0]
+        assert ep.request_body_schema is not None
+        # Should contain Pet schema fields, not be empty/None
+        assert "id" in ep.request_body_schema or "name" in ep.request_body_schema
+
+    def test_response_ref_resolved(self, component_refs_file):
+        r = _extract(component_refs_file, detail=True)
+        ep = r.endpoints[0]
+        assert "201" in ep.responses
+        # Should contain Pet schema fields, not just description or "—"
+        assert ep.responses["201"] != "—"
+        assert "id" in ep.responses["201"] or "name" in ep.responses["201"]
+
+    def test_response_ref_second_status(self, component_refs_file):
+        r = _extract(component_refs_file, detail=True)
+        ep = r.endpoints[0]
+        assert "422" in ep.responses
+        assert ep.responses["422"] != "—"
+        assert "message" in ep.responses["422"]
+
+    def test_component_refs_without_detail_dont_crash(self, component_refs_file):
+        r = _extract(component_refs_file)
+        assert r.shown_endpoints == 1
+
+
 # ── OpenAPI 2 (Swagger) ───────────────────────────────────────────────────────
 
 class TestOpenAPI2:
@@ -472,6 +574,83 @@ class TestGraphQL:
         input_type = next((t for t in r.graphql_types if t.name == "NewPetInput"), None)
         assert input_type is not None
         assert input_type.kind == "input"
+
+
+# ── GraphQL custom root operation types ──────────────────────────────────────
+
+GRAPHQL_CUSTOM_ROOTS = """
+schema {
+  query: RootQuery
+  mutation: RootMutation
+}
+
+type RootQuery {
+  pets(limit: Int): [Pet]
+  pet(id: ID!): Pet
+}
+
+type RootMutation {
+  createPet(name: String!): Pet
+}
+
+type Pet {
+  id: ID!
+  name: String!
+}
+"""
+
+
+@pytest.fixture
+def custom_root_graphql_file(tmp_path):
+    p = tmp_path / "custom_roots.graphql"
+    p.write_text(GRAPHQL_CUSTOM_ROOTS)
+    return str(p)
+
+
+class TestGraphQLCustomRoots:
+    def test_queries_section_rendered(self, custom_root_graphql_file):
+        md = _extract(custom_root_graphql_file).to_markdown()
+        assert "## Queries" in md
+
+    def test_mutations_section_rendered(self, custom_root_graphql_file):
+        md = _extract(custom_root_graphql_file).to_markdown()
+        assert "## Mutations" in md
+
+    def test_query_fields_shown(self, custom_root_graphql_file):
+        md = _extract(custom_root_graphql_file).to_markdown()
+        assert "pets" in md
+        assert "pet" in md
+
+    def test_mutation_fields_shown(self, custom_root_graphql_file):
+        md = _extract(custom_root_graphql_file).to_markdown()
+        assert "createPet" in md
+
+    def test_root_types_not_in_types_section(self, custom_root_graphql_file):
+        md = _extract(custom_root_graphql_file).to_markdown()
+        # RootQuery / RootMutation should not appear as regular types
+        assert "### RootQuery" not in md
+        assert "### RootMutation" not in md
+
+    def test_operation_kind_tagged_correctly(self, custom_root_graphql_file):
+        r = _extract(custom_root_graphql_file)
+        root_query = next(t for t in r.graphql_types if t.name == "RootQuery")
+        root_mut = next(t for t in r.graphql_types if t.name == "RootMutation")
+        assert root_query.operation_kind == "query"
+        assert root_mut.operation_kind == "mutation"
+
+    def test_non_root_type_has_no_operation_kind(self, custom_root_graphql_file):
+        r = _extract(custom_root_graphql_file)
+        pet = next(t for t in r.graphql_types if t.name == "Pet")
+        assert pet.operation_kind is None
+
+    def test_operations_count_in_summary(self, custom_root_graphql_file):
+        md = _extract(custom_root_graphql_file).to_markdown()
+        assert "**Operations:**" in md
+
+    def test_json_output_includes_operation_kind(self, custom_root_graphql_file):
+        d = _extract(custom_root_graphql_file).to_json()
+        root_query = next(t for t in d["graphql_types"] if t["name"] == "RootQuery")
+        assert root_query["operation_kind"] == "query"
 
 
 # ── YAML format ───────────────────────────────────────────────────────────────

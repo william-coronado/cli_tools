@@ -84,10 +84,17 @@ def _parse_spec(data: dict) -> OpenAPISpec:
             servers.append(f"{schemes[0]}://{host}{base}")
 
     # Components / definitions
+    # Merge all referenceable component sections into a single flat dict.
+    # _resolve_ref takes the last path segment of a $ref, so
+    # #/components/requestBodies/PetBody and #/components/schemas/PetBody both
+    # resolve by name "PetBody". Schemas are merged last so they win on collision,
+    # since they are most commonly referenced by field type $refs.
     components: dict = {}
     if is_v3:
-        schemas = data.get("components", {}).get("schemas", {})
-        components = dict(schemas)
+        raw_components = data.get("components", {}) or {}
+        for section in ("responses", "requestBodies", "parameters"):
+            components.update(raw_components.get(section, {}) or {})
+        components.update(raw_components.get("schemas", {}) or {})
     else:
         definitions = data.get("definitions", {})
         components = dict(definitions)
@@ -161,6 +168,8 @@ def _merge_params(path_params: list[dict], op_params: list[dict]) -> list[dict]:
 def extract_request_body_schema(request_body: dict | None, components: dict) -> dict | None:
     if not request_body:
         return None
+    # Resolve a top-level $ref (e.g. #/components/requestBodies/PetBody)
+    request_body = _resolve_ref(request_body, components)
     content = request_body.get("content", {})
     for mime in ("application/json", "application/x-www-form-urlencoded", "*/*"):
         schema = content.get(mime, {}).get("schema")

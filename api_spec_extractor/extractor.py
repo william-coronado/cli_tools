@@ -42,6 +42,7 @@ class GraphQLType:
     kind: str               # object | input | interface | union | enum | scalar
     fields: list[GraphQLField]
     description: str | None
+    operation_kind: str | None = None   # "query" | "mutation" | "subscription" | None
 
 
 @dataclass
@@ -181,6 +182,7 @@ class SpecExtractor:
                         for f in t.fields
                     ],
                     description=t.description,
+                    operation_kind=t.operation_kind,
                 )
                 for t in spec.types
             ]

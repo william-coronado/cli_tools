@@ -110,12 +110,13 @@ class Renderer:
         count_parts = [f"{v} {k}{'s' if v != 1 else ''}" for k, v in sorted(kinds.items())]
         lines.append("**Types:** " + ", ".join(count_parts))
 
-        # Root operation types
-        op_types = {t.name.lower(): t for t in r.graphql_types if t.name.lower() in _OPERATION_KINDS}
+        # Root operation types — keyed by canonical kind ("query"/"mutation"/"subscription"),
+        # not by name, so custom root type names (e.g. RootQuery) are handled correctly.
+        op_types = {t.operation_kind: t for t in r.graphql_types if t.operation_kind is not None}
         if op_types:
             op_parts = [
-                f"{len(t.fields)} {_PLURAL.get(t.name.lower(), t.name.lower() + 's').lower()}"
-                for t in op_types.values()
+                f"{len(t.fields)} {_PLURAL.get(kind, kind + 's').lower()}"
+                for kind, t in op_types.items()
             ]
             lines.append("**Operations:** " + ", ".join(op_parts))
         lines.append("")
@@ -138,7 +139,7 @@ class Renderer:
                 lines.append("")
 
         # Non-operation types
-        non_op = [t for t in r.graphql_types if t.name.lower() not in _OPERATION_KINDS]
+        non_op = [t for t in r.graphql_types if t.operation_kind is None]
         if non_op:
             lines.append("## Types")
             for t in non_op:
@@ -191,6 +192,7 @@ class Renderer:
             return {
                 "name": t.name,
                 "kind": t.kind,
+                "operation_kind": t.operation_kind,
                 "description": t.description,
                 "fields": [
                     {"name": f.name, "type": f.type_str, "args": f.args, "description": f.description}

@@ -11,6 +11,7 @@ class RawGraphQLType:
     kind: str           # object | input | interface | union | enum | scalar
     fields: list[tuple[str, str, list[str], str | None]]  # (name, type_str, args, description)
     description: str | None
+    operation_kind: str | None = None   # "query" | "mutation" | "subscription" | None
 
 
 @dataclass
@@ -45,6 +46,17 @@ def parse_graphql_sdl(content: str) -> GraphQLSpec:
         schema = build_ast_schema(ast)
     except Exception as e:
         raise ValueError(f"Invalid GraphQL SDL: {e}") from e
+
+    # Map each root operation type's actual name to its canonical kind.
+    # A schema can declare custom root names, e.g. `schema { query: RootQuery }`,
+    # so we can't rely on the type being literally named "Query".
+    _root_op_kinds: dict[str, str] = {}
+    if schema.query_type:
+        _root_op_kinds[schema.query_type.name] = "query"
+    if schema.mutation_type:
+        _root_op_kinds[schema.mutation_type.name] = "mutation"
+    if schema.subscription_type:
+        _root_op_kinds[schema.subscription_type.name] = "subscription"
 
     def _type_str(t) -> str:
         if isinstance(t, GraphQLNonNull):
@@ -81,6 +93,7 @@ def parse_graphql_sdl(content: str) -> GraphQLSpec:
                 kind=kind,
                 fields=fields,
                 description=gql_type.description or None,
+                operation_kind=_root_op_kinds.get(name),
             ))
 
         elif isinstance(gql_type, GraphQLUnionType):
