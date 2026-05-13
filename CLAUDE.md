@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A suite of ten Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
+A suite of eleven Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
 
 | Tool | Purpose |
 |---|---|
@@ -18,6 +18,7 @@ A suite of ten Python CLI tools that pre-process inputs before passing them to C
 | `dep_inspector` | Inspects Python/JS manifests + lockfiles: declared/resolved/transitive + outdated/audit |
 | `notebook_extractor` | Extracts code/markdown from .ipynb; stubs images, truncates outputs, dedupes streams |
 | `api_spec_extractor` | Extracts endpoint catalog or detail from OpenAPI 2/3 and GraphQL SDL specs |
+| `http_inspector` | Makes an HTTP request and returns status + headers + body shape/sample |
 
 ## Setup
 
@@ -40,6 +41,7 @@ System dependencies:
 - `dep_inspector`: pyyaml is optional (pnpm-lock.yaml only) — `pip install pyyaml`
 - `notebook_extractor`: no system deps; pathspec only (already installed)
 - `api_spec_extractor`: pyyaml is optional (.yaml/.yml specs); graphql-core is optional (.graphql/.gql) — `pip install pyyaml graphql-core`
+- `http_inspector`: httpx required — `pip install httpx`
 
 Verify:
 ```bash
@@ -140,6 +142,13 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 │   │                       # openapi.py (OpenAPI 2/3 parser), graphql.py (GraphQL SDL parser)
 │   ├── mcp_tool.py
 │   └── requirements.txt
+├── http_inspector/
+│   ├── cli.py
+│   ├── inspector.py        # HttpInspector + dataclasses (HttpResult, BodySummary, HeaderInfo, ...)
+│   ├── renderer.py         # markdown/json/text; status + headers table + body shape
+│   ├── body/               # json_shape.py (schema inference + sample), xml_shape.py, text.py
+│   ├── mcp_tool.py
+│   └── requirements.txt
 └── tests/
     ├── conftest.py
     ├── fixtures/           # HTML, log, and PDF test fixtures
@@ -152,7 +161,8 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
     ├── test_data_summarizer.py
     ├── test_dep_inspector.py
     ├── test_notebook_extractor.py
-    └── test_api_spec_extractor.py
+    ├── test_api_spec_extractor.py
+    └── test_http_inspector.py
 ```
 
 ### Key Invariants
@@ -235,6 +245,11 @@ Each tool provides `mcp_tool.py`. Register tools in `.claude/mcp.json` (already 
     {
       "name": "extract_api_spec",
       "command": ["python", "-m", "api_spec_extractor.mcp_tool"],
+      "cwd": "~/dev/cli_tools"
+    },
+    {
+      "name": "inspect_http",
+      "command": ["python", "-m", "http_inspector.mcp_tool"],
       "cwd": "~/dev/cli_tools"
     }
   ]

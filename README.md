@@ -23,6 +23,7 @@ a bash step.
 | [`dep_inspector`](#dep_inspector) | Reading raw lockfiles (500 KB+ package-lock.json) | Declared/resolved/transitive + outdated/audit |
 | [`notebook_extractor`](#notebook_extractor) | Reading raw .ipynb with base64/stream noise | Clean cells + stubbed images + deduped streams |
 | [`api_spec_extractor`](#api_spec_extractor) | Pasting raw OpenAPI/Swagger/GraphQL specs | Endpoint catalog or per-endpoint detail (5–100× reduction) |
+| [`http_inspector`](#http_inspector) | Full API response bodies in context | Status + headers + body shape + sample (5–100× reduction) |
 
 ---
 
@@ -45,6 +46,7 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 ├── dep_inspector/
 ├── notebook_extractor/
 ├── api_spec_extractor/
+├── http_inspector/
 └── tests/
     └── fixtures/           # HTML, log, and PDF test fixtures
 ```
@@ -84,6 +86,7 @@ pip install -r data_summarizer/requirements.txt
 pip install -r dep_inspector/requirements.txt
 pip install -r notebook_extractor/requirements.txt
 pip install -r api_spec_extractor/requirements.txt
+pip install -r http_inspector/requirements.txt
 ```
 
 ### 3. System dependencies
@@ -101,6 +104,7 @@ Some tools require system packages beyond pip:
 | `notebook_extractor` | *(none — stdlib + pathspec only)* | — |
 | `api_spec_extractor` | pyyaml *(optional, .yaml/.yml specs)* | `pip install pyyaml` |
 | `api_spec_extractor` | graphql-core *(optional, .graphql/.gql specs)* | `pip install graphql-core` |
+| `http_inspector` | httpx *(required)* | `pip install httpx` |
 
 ### 4. Verify installation
 
@@ -115,6 +119,7 @@ python -m data_summarizer.cli --help
 python -m dep_inspector.cli --help
 python -m notebook_extractor.cli --help
 python -m api_spec_extractor.cli --help
+python -m http_inspector.cli --help
 ```
 
 ---
@@ -181,6 +186,11 @@ with the absolute path to your project root.
     {
       "name": "extract_api_spec",
       "command": ["python", "-m", "api_spec_extractor.mcp_tool"],
+      "cwd": "/absolute/path/to/project"
+    },
+    {
+      "name": "inspect_http",
+      "command": ["python", "-m", "http_inspector.mcp_tool"],
       "cwd": "/absolute/path/to/project"
     }
   ]
@@ -647,6 +657,54 @@ extract_api_spec(source="https://example.com/openapi.json", endpoint="/orders")
 
 ---
 
+### `http_inspector`
+
+Makes a live HTTP request and returns a token-efficient summary: status code,
+selected response headers (rate-limit, content, server), and a shape + sample
+of the body. JSON responses show a schema and N sample records. Text and XML
+are truncated/summarized. Cookie values are redacted by default.
+
+Complements `url_fetcher` (which targets human-readable web pages) and
+`api_spec_extractor` (which reads spec files offline).
+
+**Common usage:**
+```bash
+# GET and summarize
+python -m http_inspector.cli https://api.example.com/users
+
+# POST with a JSON body
+python -m http_inspector.cli https://api.example.com/users -X POST --data '{"name": "Alice"}'
+
+# POST reading body from a file
+python -m http_inspector.cli https://api.example.com/users -X POST --data @payload.json
+
+# Custom headers
+python -m http_inspector.cli https://api.example.com/me -H "Authorization: Bearer <token>"
+
+# Shape only (no sample records)
+python -m http_inspector.cli https://api.example.com/users --shape-only
+
+# Show all headers (not just the important ones)
+python -m http_inspector.cli https://api.example.com/users --show-all-headers
+
+# JSON output
+python -m http_inspector.cli https://api.example.com/users --format json
+```
+
+**MCP usage:**
+```
+inspect_http(url="https://api.example.com/users")
+inspect_http(url="https://api.example.com/users", max_array_items=3)
+inspect_http(url="https://api.example.com/users", method="POST", data='{"name":"Alice"}')
+inspect_http(url="https://api.example.com/users", shape_only=true)
+inspect_http(url="https://api.example.com/users", show_all_headers=true)
+```
+
+**Exit codes:** `0` success · `1` network/request error (timeout, DNS, HTTP error) ·
+`4` missing httpx dependency.
+
+---
+
 ## Recommended Workflows
 
 These sequences show how to chain the tools for common Claude Code tasks.
@@ -724,6 +782,21 @@ reading source files (~10,000 tokens) = ~40,000 tokens.
 
 Each call strips navigation, headers, and boilerplate. Use `--batch urls.txt`
 if you have a list of URLs to fetch in one command.
+
+### Probing a live API endpoint
+
+Use `http_inspector` to see what an endpoint actually returns before writing a client:
+
+```
+1. inspect_http(url="https://api.example.com/users")
+   → shape: array[50] → {id: integer, name: string, email: string}
+2. inspect_http(url="https://api.example.com/users/1")
+   → shape: {id: integer, name: string, roles: array[string], address: {...}}
+3. inspect_http(url="https://api.example.com/users", method="POST",
+                data='{"name":"test"}',
+                headers=["Authorization: Bearer <token>"])
+   → 201 + {id: integer} shape
+```
 
 ### Understanding an API before implementing a client
 
