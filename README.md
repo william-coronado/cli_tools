@@ -237,6 +237,7 @@ index_codebase(repo_path="src/models", detail="high")
 
 Enhanced `tree` with sizes, ages, language detection, and noise filtering.
 Automatically excludes `node_modules`, `__pycache__`, `.git`, and other noise.
+Dotfiles (names starting with `.`) are hidden by default; use `--show-hidden` to include them.
 
 ```bash
 # Current directory
@@ -247,6 +248,9 @@ python -m smart_file_tree.cli . --depth 2
 
 # Show only recently modified files (last 7 days)
 python -m smart_file_tree.cli . --modified-after 7d
+
+# Include dotfiles (.env, .gitignore, etc.)
+python -m smart_file_tree.cli . --show-hidden
 
 # Focus on a subdirectory
 python -m smart_file_tree.cli . --focus src/
@@ -374,14 +378,19 @@ Extracts focused git context for a file or repo — commits, diff, blame, and st
 # File mode: context for a specific file
 python -m git_context.cli src/models/classifier.py
 
-# File mode: skip blame (faster)
+# File mode: skip expensive sections for faster output
 python -m git_context.cli src/models/classifier.py --no-blame
+python -m git_context.cli src/models/classifier.py --no-diff
+python -m git_context.cli src/models/classifier.py --no-related
 
 # File mode: diff vs. specific branch
 python -m git_context.cli src/models/classifier.py --base main
 
 # Repo mode: branch status + recent activity
 python -m git_context.cli .
+
+# Repo mode: skip uncommitted diff collection
+python -m git_context.cli . --no-diff
 
 # Repo mode: more commits
 python -m git_context.cli . --commits 20

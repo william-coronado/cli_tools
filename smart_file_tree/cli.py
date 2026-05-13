@@ -7,6 +7,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# shared/duration.py lives at the project root, one level up from this package
+_PROJECT_ROOT = Path(__file__).parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+from shared.duration import parse_duration
+
 
 def _parse_size(s: str) -> int:
     m = re.match(r"^([\d.]+)\s*(B|KB|MB|GB)?$", s.strip(), re.IGNORECASE)
@@ -20,17 +26,25 @@ def _parse_size(s: str) -> int:
 
 def _parse_duration_to_timestamp(s: str) -> float:
     """Return a Unix timestamp representing 'now minus duration', or parse ISO date."""
-    m = re.match(r"^(\d+)(m|h|d|w|mo|y)$", s.strip())
-    if m:
-        n = int(m.group(1))
-        unit = m.group(2)
-        secs = {"m": 60, "h": 3600, "d": 86400, "w": 604800, "mo": 2_592_000, "y": 31_536_000}[unit]
-        return time.time() - n * secs
+    try:
+        return time.time() - parse_duration(s)
+    except ValueError:
+        pass
     try:
         return datetime.fromisoformat(s).timestamp()
     except ValueError:
         raise argparse.ArgumentTypeError(
             f"Cannot parse date/duration: {s!r}. Use ISO date (2025-01-01) or relative (7d, 24h)"
+        )
+
+
+def _parse_recent_window(s: str) -> int:
+    """Parse duration string to seconds."""
+    try:
+        return parse_duration(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Cannot parse duration: {s!r}. Use e.g. '7d', '24h', '2w'"
         )
 
 
@@ -68,7 +82,9 @@ def main(argv: list[str] | None = None) -> int:
     filt.add_argument("--modified-before", type=_parse_duration_to_timestamp, default=None)
 
     ann = parser.add_argument_group("Annotation options")
-    ann.add_argument("--recent-window", type=_parse_duration_to_timestamp, default=None)
+    ann.add_argument("--recent-window", type=_parse_recent_window,
+                     default=_parse_recent_window("7d"),
+                     help="Duration for 'recently modified' annotation (default: 7d)")
     ann.add_argument("--large-threshold", type=_parse_threshold, default=1_048_576)
 
     out = parser.add_argument_group("Output options")
@@ -117,10 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     if force_compact:
         fmt = "compact"
 
-    # Compute recent_window seconds (if user passed --recent-window it's a timestamp; convert back)
-    recent_window = 86_400 * 7
-    if args.recent_window is not None:
-        recent_window = int(time.time() - args.recent_window)
+    recent_window = args.recent_window
 
     from .tree import build
 
@@ -140,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         files_only=args.files_only,
         large_threshold=args.large_threshold,
         recent_window=recent_window,
+        show_hidden=args.show_hidden,
     )
     elapsed = time.time() - start
 

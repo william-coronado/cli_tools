@@ -163,6 +163,9 @@ class GitContextExtractor:
         self,
         file_path: str | Path,
         base: str | None = None,
+        skip_blame: bool = False,
+        skip_diff: bool = False,
+        skip_related: bool = False,
     ) -> FileContext:
         from .git_runner import FileNotTrackedError
 
@@ -182,9 +185,9 @@ class GitContextExtractor:
 
         resolved_base = base or self._resolve_base()
         commits = self._get_file_commits(rel_path)
-        diffs = self._get_file_diff(rel_path, resolved_base)
-        blame = self._get_blame_summary(rel_path)
-        related = self._get_related_files(rel_path, commits)
+        diffs = [] if skip_diff else self._get_file_diff(rel_path, resolved_base)
+        blame = None if skip_blame else self._get_blame_summary(rel_path)
+        related = [] if skip_related else self._get_related_files(rel_path, commits)
 
         branch = self._runner.run("rev-parse", "--abbrev-ref", "HEAD").strip()
 
@@ -278,7 +281,7 @@ class GitContextExtractor:
 
     # ── Repo Mode ─────────────────────────────────────────────────────────────
 
-    def get_repo_context(self) -> RepoContext:
+    def get_repo_context(self, skip_diff: bool = False) -> RepoContext:
         from .git_runner import GitError
 
         repo_root = self._runner.get_repo_root()
@@ -291,7 +294,7 @@ class GitContextExtractor:
                 active_files[f] = active_files.get(f, 0) + 1
         sorted_active = sorted(active_files, key=lambda f: -active_files[f])
 
-        uncommitted = self._get_uncommitted_diff()
+        uncommitted = [] if skip_diff else self._get_uncommitted_diff()
 
         stash_count = self._get_stash_count()
 

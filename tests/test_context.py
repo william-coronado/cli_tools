@@ -362,7 +362,7 @@ class TestGetFileContext:
 
 
 class TestGetRepoContext:
-    def test_returns_repo_context(self, tmp_path):
+    def _make_repo_extractor(self, tmp_path):
         extractor = _make_extractor(tmp_path)
 
         def _run(*args, **kwargs):
@@ -371,7 +371,7 @@ class TestGetRepoContext:
             if "log" in args:
                 return LOG_SIMPLE
             if "diff" in args:
-                return ""
+                return DIFF_MODIFIED
             if "stash" in args:
                 return ""
             if "describe" in args:
@@ -380,10 +380,29 @@ class TestGetRepoContext:
 
         extractor._runner.run.side_effect = _run
         extractor._runner.get_repo_root.return_value = tmp_path
+        return extractor
 
+    def test_returns_repo_context(self, tmp_path):
+        extractor = self._make_repo_extractor(tmp_path)
         ctx = extractor.get_repo_context()
         assert isinstance(ctx, RepoContext)
         assert ctx.recent_commits
+
+    def test_skip_diff_omits_uncommitted(self, tmp_path):
+        extractor = self._make_repo_extractor(tmp_path)
+        ctx = extractor.get_repo_context(skip_diff=True)
+        assert ctx.uncommitted_diff == []
+
+    def test_skip_diff_does_not_call_diff_runner(self, tmp_path):
+        extractor = self._make_repo_extractor(tmp_path)
+        extractor.get_repo_context(skip_diff=True)
+        diff_calls = [c for c in extractor._runner.run.call_args_list if "diff" in c.args]
+        assert not diff_calls, "expected no 'diff' git calls when skip_diff=True"
+
+    def test_no_diff_flag_repo_mode(self, tmp_path):
+        from git_context.cli import main
+        rc = main([str(tmp_path), "--no-diff"])
+        assert rc in (0, 1)  # passes through without AttributeError
 
 
 # ── Diff truncation ───────────────────────────────────────────────────────────
@@ -503,3 +522,86 @@ class TestRenderer:
         # blame_summary should be a dict, not a Python object
         assert isinstance(parsed["blame_summary"], dict)
         assert "authors" in parsed["blame_summary"]
+
+
+# ── Skip flags: no-blame, no-diff, no-related ─────────────────────────────────
+
+class TestSkipFlags:
+    def _extractor_with_file(self, tmp_path: Path):
+        extractor = _make_extractor(tmp_path)
+        dummy = tmp_path / "src" / "app.py"
+        dummy.parent.mkdir(parents=True, exist_ok=True)
+        dummy.write_text("# hi")
+
+        def _run(*args, **kwargs):
+            if "log" in args:
+                return LOG_SIMPLE
+            if "diff" in args:
+                return DIFF_MODIFIED
+            if "blame" in args:
+                return BLAME_PORCELAIN
+            if "rev-parse" in args and "--abbrev-ref" in args:
+                return "main\n"
+            if "merge-base" in args:
+                return ""
+            return ""
+
+        extractor._runner.run.side_effect = _run
+        extractor._runner.get_default_branch.return_value = "main"
+        return extractor, dummy
+
+    def test_no_blame_skips_blame(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy, skip_blame=True)
+        assert ctx.blame_summary is None
+
+    def test_no_diff_skips_diff(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy, skip_diff=True)
+        assert ctx.diff_vs_base == []
+
+    def test_no_related_skips_related(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy, skip_related=True)
+        assert ctx.related_files == []
+
+    def test_all_flags_independent(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(
+            dummy, skip_blame=True, skip_diff=True, skip_related=True
+        )
+        assert ctx.blame_summary is None
+        assert ctx.diff_vs_base == []
+        assert ctx.related_files == []
+        assert ctx.recent_commits  # commits always fetched
+
+    def test_no_flags_fetches_all(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy)
+        assert ctx.blame_summary is not None
+        # diff runner was invoked — verify it was called with "diff" args
+        diff_calls = [c for c in extractor._runner.run.call_args_list if "diff" in c.args]
+        assert diff_calls, "expected _runner.run to be called with 'diff'"
+        assert ctx.recent_commits
+
+    def test_cli_no_blame_flag(self, tmp_path):
+        from git_context.cli import main
+        dummy = tmp_path / "app.py"
+        dummy.write_text("# hi")
+        # Run with a non-git path — expect error exit, not crash
+        rc = main([str(dummy), "--no-blame"])
+        assert rc in (0, 1)  # no AttributeError
+
+    def test_cli_no_diff_flag(self, tmp_path):
+        from git_context.cli import main
+        dummy = tmp_path / "app.py"
+        dummy.write_text("# hi")
+        rc = main([str(dummy), "--no-diff"])
+        assert rc in (0, 1)
+
+    def test_cli_no_related_flag(self, tmp_path):
+        from git_context.cli import main
+        dummy = tmp_path / "app.py"
+        dummy.write_text("# hi")
+        rc = main([str(dummy), "--no-related"])
+        assert rc in (0, 1)

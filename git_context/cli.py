@@ -74,13 +74,19 @@ def main(argv: list[str] | None = None) -> int:
         renderer = Renderer()
 
         if repo_mode:
-            ctx = extractor.get_repo_context()
+            ctx = extractor.get_repo_context(skip_diff=args.no_diff)
             if args.format == "json":
                 output = renderer.to_json(ctx)
             else:
                 output = renderer.render_repo_context(ctx)
         else:
-            ctx = extractor.get_file_context(target, base=args.base)
+            ctx = extractor.get_file_context(
+                target,
+                base=args.base,
+                skip_blame=args.no_blame,
+                skip_diff=args.no_diff,
+                skip_related=args.no_related,
+            )
             if args.format == "json":
                 output = renderer.to_json(ctx)
             else:

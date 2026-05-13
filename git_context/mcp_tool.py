@@ -66,13 +66,14 @@ def _handle_git_file_context(params: dict) -> str:
     file_path = params["file_path"]
     base = params.get("base")
     commits = params.get("commits", 10)
+    no_blame = bool(params.get("no_blame", False))
 
     target = Path(file_path).resolve()
     extractor = GitContextExtractor(
         repo_path=target.parent,
         max_commits=commits,
     )
-    ctx = extractor.get_file_context(target, base=base)
+    ctx = extractor.get_file_context(target, base=base, skip_blame=no_blame)
     renderer = Renderer()
     return renderer.render_file_context(ctx, base=base or "")
 
