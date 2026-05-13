@@ -48,7 +48,7 @@ fi
 
 # ── pip install ────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}Installing Python dependencies${RESET}"
-TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor api_spec_extractor)
+TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor api_spec_extractor http_inspector)
 for tool in "${TOOLS[@]}"; do
     req="$tool/requirements.txt"
     if [ ! -f "$req" ]; then
