@@ -48,7 +48,7 @@ fi
 
 # ── pip install ────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}Installing Python dependencies${RESET}"
-TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context)
+TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer)
 for tool in "${TOOLS[@]}"; do
     req="$tool/requirements.txt"
     if [ ! -f "$req" ]; then
@@ -115,6 +115,26 @@ if python3 -c "import easyocr" &>/dev/null 2>&1; then
 else
     warn "easyocr not installed (optional) — pdf_extractor --ocr-backend easyocr will be unavailable."
     warn "  pip install easyocr"
+fi
+
+# pandas / pyarrow / openpyxl (optional — data_summarizer extra formats)
+if python3 -c "import pandas" &>/dev/null 2>&1; then
+    ok "pandas  (data_summarizer richer CSV stats)"
+else
+    warn "pandas not installed (optional) — data_summarizer falls back to stdlib (fewer stats)."
+    warn "  pip install pandas"
+fi
+if python3 -c "import pyarrow" &>/dev/null 2>&1; then
+    ok "pyarrow  (data_summarizer .parquet support)"
+else
+    warn "pyarrow not installed (optional) — data_summarizer can't read .parquet."
+    warn "  pip install pyarrow"
+fi
+if python3 -c "import openpyxl" &>/dev/null 2>&1; then
+    ok "openpyxl  (data_summarizer .xlsx support)"
+else
+    warn "openpyxl not installed (optional) — data_summarizer can't read .xlsx."
+    warn "  pip install openpyxl"
 fi
 
 # ── Smoke test: import each tool ───────────────────────────────────────────────

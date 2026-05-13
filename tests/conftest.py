@@ -190,3 +190,127 @@ def sample_python_repo(tmp_path_factory) -> Path:
     (root / ".indexignore").write_text("README.md\n")
 
     return root
+
+
+# ── data_summarizer fixtures ──────────────────────────────────────────────────
+
+@pytest.fixture(scope="session")
+def tiny_csv(tmp_path_factory) -> Path:
+    d = tmp_path_factory.mktemp("data_csv")
+    p = d / "tiny.csv"
+    rows = [
+        "order_id,customer_email,amount_usd,order_date,region",
+        "1,alice@example.com,42.10,2023-01-01,NA",
+        "2,bob@example.com,199.00,2023-01-02,EU",
+        "3,carol@example.com,12.50,2023-01-03,EU",
+        "4,dave@example.com,524.30,2023-01-04,NA",
+        "5,eve@example.com,89.00,2023-01-05,APAC",
+        "6,frank@example.com,1024.00,2023-01-06,APAC",
+        "7,grace@example.com,,2023-01-07,",
+        "8,heidi@example.com,33.00,2023-01-08,EU",
+        "9,ivan@example.com,17.50,2023-01-09,NA",
+        "10,judy@example.com,76.50,2023-01-10,NA",
+    ]
+    p.write_text("\n".join(rows) + "\n")
+    return p
+
+
+@pytest.fixture(scope="session")
+def messy_csv(tmp_path_factory) -> Path:
+    d = tmp_path_factory.mktemp("data_csv_messy")
+    p = d / "messy.csv"
+    rows = [
+        "id,note,mixed",
+        '1,"hello, world",42',
+        '2,"she said ""hi""",13',
+        "3,,",
+        "4,plain text,",
+        "5,end,fish",
+    ]
+    p.write_text("\n".join(rows) + "\n")
+    return p
+
+
+@pytest.fixture(scope="session")
+def tiny_jsonl(tmp_path_factory) -> Path:
+    import json as _json
+    d = tmp_path_factory.mktemp("data_jsonl")
+    p = d / "tiny.jsonl"
+    records = [
+        {"id": 1, "name": "alice", "score": 0.92},
+        {"id": 2, "name": "bob", "score": 0.75},
+        {"id": 3, "name": "carol", "score": 0.81, "region": "EU"},
+        {"id": 4, "name": "dave", "score": None, "region": "NA"},
+        {"id": 5, "name": "eve", "score": 0.66, "region": "NA"},
+    ]
+    p.write_text("\n".join(_json.dumps(r) for r in records) + "\n")
+    return p
+
+
+@pytest.fixture(scope="session")
+def nested_json(tmp_path_factory) -> Path:
+    import json as _json
+    d = tmp_path_factory.mktemp("data_json_nested")
+    p = d / "nested.json"
+    payload = {
+        "version": "1.2.3",
+        "users": [{"id": 1}, {"id": 2}],
+        "config": {"timeout_seconds": 30, "endpoints": ["a", "b"]},
+        "active": True,
+        "owner": None,
+    }
+    p.write_text(_json.dumps(payload, indent=2))
+    return p
+
+
+@pytest.fixture(scope="session")
+def array_json(tmp_path_factory) -> Path:
+    import json as _json
+    d = tmp_path_factory.mktemp("data_json_array")
+    p = d / "array.json"
+    rows = [
+        {"id": 1, "name": "alice", "score": 0.92},
+        {"id": 2, "name": "bob", "score": 0.75},
+        {"id": 3, "name": "carol", "score": 0.81, "region": "EU"},
+    ]
+    p.write_text(_json.dumps(rows))
+    return p
+
+
+@pytest.fixture(scope="session")
+def multi_table_sqlite(tmp_path_factory) -> Path:
+    import sqlite3
+    d = tmp_path_factory.mktemp("data_sqlite")
+    p = d / "multi.sqlite"
+    conn = sqlite3.connect(str(p))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, active BOOLEAN)")
+    cur.executemany(
+        "INSERT INTO users VALUES (?,?,?)",
+        [(1, "alice", 1), (2, "bob", 1), (3, "carol", 0)],
+    )
+    cur.execute("CREATE TABLE orders (id INTEGER, user_id INTEGER, amount REAL)")
+    cur.executemany(
+        "INSERT INTO orders VALUES (?,?,?)",
+        [(i, (i % 3) + 1, i * 10.0) for i in range(1, 11)],
+    )
+    cur.execute("CREATE TABLE events (id INTEGER, kind TEXT)")
+    cur.executemany(
+        "INSERT INTO events VALUES (?,?)",
+        [(i, ["a", "b", "c"][i % 3]) for i in range(1, 31)],
+    )
+    conn.commit()
+    conn.close()
+    return p
+
+
+@pytest.fixture(scope="session")
+def sample_data_dir(tmp_path_factory, tiny_csv, tiny_jsonl, multi_table_sqlite) -> Path:
+    """A directory containing several data files, plus a node_modules folder to verify exclusions."""
+    d = tmp_path_factory.mktemp("data_dir")
+    import shutil
+    for src in (tiny_csv, tiny_jsonl, multi_table_sqlite):
+        shutil.copy(src, d / src.name)
+    (d / "node_modules").mkdir()
+    (d / "node_modules" / "bad.csv").write_text("a,b\n1,2\n")
+    return d

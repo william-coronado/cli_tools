@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A suite of six Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
+A suite of seven Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
 
 | Tool | Purpose |
 |---|---|
@@ -14,6 +14,7 @@ A suite of six Python CLI tools that pre-process inputs before passing them to C
 | `url_fetcher` | Fetches URLs as clean markdown; strips nav/footers/ads/scripts |
 | `log_summarizer` | Parses log files and returns only errors, warnings, tracebacks, and metrics |
 | `git_context` | Extracts focused git context (commits, diff, blame, status) for a file or repo |
+| `data_summarizer` | Summarizes CSV/TSV/JSON/JSONL/Parquet/Excel/SQLite files: schema + sample + stats |
 
 ## Setup
 
@@ -32,6 +33,7 @@ System dependencies:
 - `pdf_extractor`: Tesseract OCR (`apt install tesseract-ocr`) + Poppler (`apt install poppler-utils`)
 - `url_fetcher`: Playwright + Chromium is optional for JS pages — `pip install playwright && playwright install chromium`
 - `git_context`: Git ≥ 2.11
+- `data_summarizer`: pandas / pyarrow / openpyxl are optional — `pip install pandas pyarrow openpyxl` (stdlib paths cover CSV/JSON/JSONL/SQLite without any of them)
 
 Verify:
 ```bash
@@ -99,6 +101,14 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 │   ├── parsers/            # log, diff, blame, status parsers
 │   ├── mcp_tool.py
 │   └── requirements.txt
+├── data_summarizer/
+│   ├── cli.py
+│   ├── summarizer.py       # DataSummarizer + dataclasses (DataSummary, TableSummary, ...)
+│   ├── renderer.py         # markdown/json/text renderers
+│   ├── stats.py            # Streaming per-column accumulators
+│   ├── readers/            # csv, json, jsonl, parquet, excel, sqlite per-format readers
+│   ├── mcp_tool.py
+│   └── requirements.txt
 └── tests/
     ├── conftest.py
     ├── fixtures/           # HTML, log, and PDF test fixtures
@@ -107,7 +117,8 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
     ├── test_summarizer.py  # log_summarizer tests
     ├── test_indexer.py     # codebase_indexer tests
     ├── test_tree.py        # smart_file_tree tests
-    └── test_context.py     # git_context tests
+    ├── test_context.py     # git_context tests
+    └── test_data_summarizer.py
 ```
 
 ### Key Invariants
@@ -171,6 +182,11 @@ Each tool provides `mcp_tool.py`. Register tools in `.claude/mcp.json` (already 
       "name": "git_repo_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
       "cwd": "~/dev/cli_tools/git_context"
+    },
+    {
+      "name": "summarize_data",
+      "command": ["python", "-m", "data_summarizer.mcp_tool"],
+      "cwd": "~/dev/cli_tools/data_summarizer"
     }
   ]
 }

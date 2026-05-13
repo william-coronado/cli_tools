@@ -1,6 +1,6 @@
 # Claude Code Token-Saving Tools
 
-A suite of six Python CLI tools that pre-process common inputs before handing them
+A suite of seven Python CLI tools that pre-process common inputs before handing them
 to Claude Code — cutting token consumption by 10–100× on typical tasks.
 
 Each tool is independently installable, exposes a consistent CLI interface, and
@@ -19,6 +19,7 @@ a bash step.
 | [`url_fetcher`](#url-fetcher) | Reading raw HTML with nav/footer/script noise | 800 KB → 5 KB per page |
 | [`log_summarizer`](#log-summarizer) | Reading large log files line by line | 10 MB → ~30 lines of signal |
 | [`git_context`](#git-context) | 5–8 sequential `git` commands per file | Multi-command → single call |
+| [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | 100 MB → schema + sample + stats |
 
 ---
 
@@ -37,6 +38,7 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 ├── url_fetcher/
 ├── log_summarizer/
 ├── git_context/
+├── data_summarizer/
 └── tests/
     └── fixtures/           # HTML, log, and PDF test fixtures
 ```
@@ -72,6 +74,7 @@ pip install -r smart_file_tree/requirements.txt
 pip install -r url_fetcher/requirements.txt
 pip install -r log_summarizer/requirements.txt
 pip install -r git_context/requirements.txt
+pip install -r data_summarizer/requirements.txt
 ```
 
 ### 3. System dependencies
@@ -84,6 +87,7 @@ Some tools require system packages beyond pip:
 | `pdf_extractor` | Poppler (pdf2image) | `brew install poppler` / `apt install poppler-utils` |
 | `url_fetcher` | Playwright + Chromium *(optional, JS pages only)* | `pip install playwright && playwright install chromium` |
 | `git_context` | Git ≥ 2.11 | Pre-installed on most systems |
+| `data_summarizer` | pandas / pyarrow / openpyxl *(optional)* | `pip install pandas pyarrow openpyxl` |
 
 ### 4. Verify installation
 
@@ -94,6 +98,7 @@ python -m smart_file_tree.cli --help
 python -m url_fetcher.cli --help
 python -m log_summarizer.cli --help
 python -m git_context.cli --help
+python -m data_summarizer.cli --help
 ```
 
 ---
@@ -141,6 +146,11 @@ with the absolute path to your project root.
       "name": "git_repo_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
       "cwd": "/absolute/path/to/project/git_context"
+    },
+    {
+      "name": "summarize_data",
+      "command": ["python", "-m", "data_summarizer.mcp_tool"],
+      "cwd": "/absolute/path/to/project/data_summarizer"
     }
   ]
 }
@@ -406,6 +416,56 @@ git_file_context(file_path="src/models/classifier.py", base="main", no_blame=tru
 git_repo_context()
 git_repo_context(commits=20)
 ```
+
+---
+
+### `data_summarizer`
+
+Summarizes tabular and structured data files — CSV, TSV, JSON, JSONL, Parquet,
+Excel, SQLite — returning schema, sample rows, and per-column statistics
+instead of the full file. Stdlib paths cover CSV/JSON/JSONL/SQLite without any
+optional installs; richer stats and Parquet/Excel support need
+`pip install pandas pyarrow openpyxl`.
+
+**Common usage:**
+```bash
+# Single file
+python -m data_summarizer.cli sales.csv
+
+# Restrict to a few columns
+python -m data_summarizer.cli sales.csv --columns order_id,amount_usd,region
+
+# SQLite multi-table
+python -m data_summarizer.cli analytics.sqlite
+python -m data_summarizer.cli analytics.sqlite --table users --table orders
+
+# JSON: array-of-records is summarized like a table;
+#       a nested object falls back to a top-level structural summary
+python -m data_summarizer.cli config.json
+python -m data_summarizer.cli api_response.json
+
+# Directory mode (respects .gitignore + node_modules etc.)
+python -m data_summarizer.cli ./data --recursive
+
+# Cap rows scanned (big files) — stats become sampled, file still summarized
+python -m data_summarizer.cli huge.csv --max-rows 50000
+
+# Skip statistics (faster; schema + sample still produced)
+python -m data_summarizer.cli sales.csv --no-stats
+
+# JSON output for downstream tools
+python -m data_summarizer.cli sales.csv --format json
+```
+
+**MCP usage:**
+```
+summarize_data(path="sales.csv")
+summarize_data(path="analytics.sqlite", table="orders")
+summarize_data(path="huge.csv", max_rows=50000, no_stats=true)
+```
+
+**Exit codes:** `0` success · `1` input/parse error · `3` wrong content type
+(no reader matches) · `4` missing optional dep (e.g. Parquet without pyarrow).
 
 ---
 
