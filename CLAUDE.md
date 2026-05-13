@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A suite of nine Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
+A suite of ten Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
 
 | Tool | Purpose |
 |---|---|
@@ -17,6 +17,7 @@ A suite of nine Python CLI tools that pre-process inputs before passing them to 
 | `data_summarizer` | Summarizes CSV/TSV/JSON/JSONL/Parquet/Excel/SQLite files: schema + sample + stats |
 | `dep_inspector` | Inspects Python/JS manifests + lockfiles: declared/resolved/transitive + outdated/audit |
 | `notebook_extractor` | Extracts code/markdown from .ipynb; stubs images, truncates outputs, dedupes streams |
+| `api_spec_extractor` | Extracts endpoint catalog or detail from OpenAPI 2/3 and GraphQL SDL specs |
 
 ## Setup
 
@@ -38,6 +39,7 @@ System dependencies:
 - `data_summarizer`: pandas / pyarrow / openpyxl are optional — `pip install pandas pyarrow openpyxl` (stdlib paths cover CSV/JSON/JSONL/SQLite without any of them)
 - `dep_inspector`: pyyaml is optional (pnpm-lock.yaml only) — `pip install pyyaml`
 - `notebook_extractor`: no system deps; pathspec only (already installed)
+- `api_spec_extractor`: pyyaml is optional (.yaml/.yml specs); graphql-core is optional (.graphql/.gql) — `pip install pyyaml graphql-core`
 
 Verify:
 ```bash
@@ -129,6 +131,15 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 │   ├── dedup.py            # CR-strip + consecutive-line suppression for stream outputs
 │   ├── mcp_tool.py
 │   └── requirements.txt
+├── api_spec_extractor/
+│   ├── cli.py
+│   ├── extractor.py        # SpecExtractor + dataclasses (SpecResult, EndpointInfo, GraphQLType, ...)
+│   ├── renderer.py         # markdown/json/text; catalog table or per-endpoint detail
+│   ├── fetcher.py          # stdlib urllib URL fetch (no extra deps)
+│   ├── parsers/            # base.py (format detection, schema simplifier, exceptions)
+│   │                       # openapi.py (OpenAPI 2/3 parser), graphql.py (GraphQL SDL parser)
+│   ├── mcp_tool.py
+│   └── requirements.txt
 └── tests/
     ├── conftest.py
     ├── fixtures/           # HTML, log, and PDF test fixtures
@@ -140,7 +151,8 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
     ├── test_context.py     # git_context tests
     ├── test_data_summarizer.py
     ├── test_dep_inspector.py
-    └── test_notebook_extractor.py
+    ├── test_notebook_extractor.py
+    └── test_api_spec_extractor.py
 ```
 
 ### Key Invariants
@@ -218,6 +230,11 @@ Each tool provides `mcp_tool.py`. Register tools in `.claude/mcp.json` (already 
     {
       "name": "extract_notebook",
       "command": ["python", "-m", "notebook_extractor.mcp_tool"],
+      "cwd": "~/dev/cli_tools"
+    },
+    {
+      "name": "extract_api_spec",
+      "command": ["python", "-m", "api_spec_extractor.mcp_tool"],
       "cwd": "~/dev/cli_tools"
     }
   ]

@@ -22,6 +22,7 @@ a bash step.
 | [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | 100 MB → schema + sample + stats |
 | [`dep_inspector`](#dep_inspector) | Reading raw lockfiles (500 KB+ package-lock.json) | Declared/resolved/transitive + outdated/audit |
 | [`notebook_extractor`](#notebook_extractor) | Reading raw .ipynb with base64/stream noise | Clean cells + stubbed images + deduped streams |
+| [`api_spec_extractor`](#api_spec_extractor) | Pasting raw OpenAPI/Swagger/GraphQL specs | Endpoint catalog or per-endpoint detail (5–100× reduction) |
 
 ---
 
@@ -42,6 +43,8 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 ├── git_context/
 ├── data_summarizer/
 ├── dep_inspector/
+├── notebook_extractor/
+├── api_spec_extractor/
 └── tests/
     └── fixtures/           # HTML, log, and PDF test fixtures
 ```
@@ -80,6 +83,7 @@ pip install -r git_context/requirements.txt
 pip install -r data_summarizer/requirements.txt
 pip install -r dep_inspector/requirements.txt
 pip install -r notebook_extractor/requirements.txt
+pip install -r api_spec_extractor/requirements.txt
 ```
 
 ### 3. System dependencies
@@ -95,6 +99,8 @@ Some tools require system packages beyond pip:
 | `data_summarizer` | pandas / pyarrow / openpyxl *(optional)* | `pip install pandas pyarrow openpyxl` |
 | `dep_inspector` | pyyaml *(optional, pnpm-lock.yaml only)* | `pip install pyyaml` |
 | `notebook_extractor` | *(none — stdlib + pathspec only)* | — |
+| `api_spec_extractor` | pyyaml *(optional, .yaml/.yml specs)* | `pip install pyyaml` |
+| `api_spec_extractor` | graphql-core *(optional, .graphql/.gql specs)* | `pip install graphql-core` |
 
 ### 4. Verify installation
 
@@ -108,6 +114,7 @@ python -m git_context.cli --help
 python -m data_summarizer.cli --help
 python -m dep_inspector.cli --help
 python -m notebook_extractor.cli --help
+python -m api_spec_extractor.cli --help
 ```
 
 ---
@@ -169,6 +176,11 @@ with the absolute path to your project root.
     {
       "name": "extract_notebook",
       "command": ["python", "-m", "notebook_extractor.mcp_tool"],
+      "cwd": "/absolute/path/to/project"
+    },
+    {
+      "name": "extract_api_spec",
+      "command": ["python", "-m", "api_spec_extractor.mcp_tool"],
       "cwd": "/absolute/path/to/project"
     }
   ]
@@ -581,6 +593,60 @@ extract_notebook(path="analysis.ipynb", tags=["training", "viz"])
 
 ---
 
+### `api_spec_extractor`
+
+Extracts a catalog table or per-endpoint detail view from OpenAPI 2/3 (Swagger)
+and GraphQL SDL specs. A real-world `swagger.json` is routinely 50 KB+; this tool
+surfaces the endpoint list or the exact shape of a single operation in a fraction
+of the token cost.
+
+**Common usage:**
+```bash
+# Endpoint catalog (default)
+python -m api_spec_extractor.cli openapi.json
+
+# Per-endpoint detail with parameters and response schemas
+python -m api_spec_extractor.cli openapi.json --detail
+
+# Filter by tag, method, or path substring
+python -m api_spec_extractor.cli openapi.json --tag billing
+python -m api_spec_extractor.cli openapi.json --method GET,POST
+python -m api_spec_extractor.cli openapi.json --endpoint /orders
+
+# Include deprecated endpoints (excluded by default)
+python -m api_spec_extractor.cli openapi.json --include-deprecated
+
+# YAML spec
+python -m api_spec_extractor.cli openapi.yaml
+
+# GraphQL SDL
+python -m api_spec_extractor.cli schema.graphql
+
+# URL input
+python -m api_spec_extractor.cli https://petstore.example.com/openapi.json
+
+# JSON output for structured processing
+python -m api_spec_extractor.cli openapi.json --format json
+```
+
+**MCP usage:**
+```
+extract_api_spec(source="openapi.json")
+extract_api_spec(source="openapi.json", detail=true)
+extract_api_spec(source="openapi.json", tag="billing", method="GET,POST")
+extract_api_spec(source="schema.graphql")
+extract_api_spec(source="https://example.com/openapi.json", endpoint="/orders")
+```
+
+**Optional dependencies:**
+- `pyyaml` — required for `.yaml`/`.yml` spec files (`pip install pyyaml`)
+- `graphql-core` — required for `.graphql`/`.gql` files (`pip install graphql-core`)
+
+**Exit codes:** `0` success · `1` file not found or parse error ·
+`3` unrecognized format (not OpenAPI or GraphQL) · `4` missing optional dep.
+
+---
+
 ## Recommended Workflows
 
 These sequences show how to chain the tools for common Claude Code tasks.
@@ -658,6 +724,28 @@ reading source files (~10,000 tokens) = ~40,000 tokens.
 
 Each call strips navigation, headers, and boilerplate. Use `--batch urls.txt`
 if you have a list of URLs to fetch in one command.
+
+### Understanding an API before implementing a client
+
+Get the shape of an API spec before writing code against it:
+
+```
+1. extract_api_spec(source="openapi.json")
+   → Endpoint catalog (method, path, summary, tags)
+2. extract_api_spec(source="openapi.json", tag="orders", detail=true)
+   → Full parameter + response schema for all /orders endpoints
+3. extract_api_spec(source="openapi.json", endpoint="/orders/{id}", method="GET", detail=true)
+   → Exact schema for a single operation
+```
+
+For GraphQL:
+
+```
+1. extract_api_spec(source="schema.graphql")
+   → Type index + Query/Mutation catalog
+2. extract_api_spec(source="schema.graphql")
+   → Then ask "show me the Pet type fields" with the index already in context
+```
 
 ---
 

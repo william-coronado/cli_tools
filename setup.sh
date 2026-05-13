@@ -48,7 +48,7 @@ fi
 
 # ── pip install ────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}Installing Python dependencies${RESET}"
-TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor)
+TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor api_spec_extractor)
 for tool in "${TOOLS[@]}"; do
     req="$tool/requirements.txt"
     if [ ! -f "$req" ]; then
@@ -137,12 +137,20 @@ else
     warn "  pip install openpyxl"
 fi
 
-# pyyaml (optional — dep_inspector pnpm-lock.yaml support)
+# pyyaml (optional — dep_inspector pnpm-lock.yaml + api_spec_extractor YAML specs)
 if python3 -c "import yaml" &>/dev/null 2>&1; then
-    ok "pyyaml  (dep_inspector pnpm-lock.yaml support)"
+    ok "pyyaml  (dep_inspector pnpm-lock.yaml; api_spec_extractor YAML specs)"
 else
-    warn "pyyaml not installed (optional) — dep_inspector can't parse pnpm-lock.yaml."
+    warn "pyyaml not installed (optional) — dep_inspector can't parse pnpm-lock.yaml; api_spec_extractor can't read .yaml specs."
     warn "  pip install pyyaml"
+fi
+
+# graphql-core (optional — api_spec_extractor GraphQL SDL support)
+if python3 -c "import graphql" &>/dev/null 2>&1; then
+    ok "graphql-core  (api_spec_extractor GraphQL SDL support)"
+else
+    warn "graphql-core not installed (optional) — api_spec_extractor can't parse .graphql files."
+    warn "  pip install graphql-core"
 fi
 
 # ── Smoke test: import each tool ───────────────────────────────────────────────
