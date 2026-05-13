@@ -107,7 +107,7 @@ class HttpInspector:
         req_headers: dict[str, str] = {}
         for name, value in opts.headers:
             req_headers[name] = value
-        if opts.data and "content-type" not in {k.lower() for k in req_headers}:
+        if opts.data is not None and "content-type" not in {k.lower() for k in req_headers}:
             ct = opts.content_type or "application/json"
             req_headers["Content-Type"] = ct
 
@@ -157,9 +157,12 @@ class HttpInspector:
             if lower in _REDACT_HEADERS:
                 if opts.no_redact_cookies:
                     result.append(HeaderInfo(name=name, value=value, redacted=False))
+                elif lower == "set-cookie":
+                    # Preserve cookie attributes (Path=/, HttpOnly, …); redact only the value.
+                    result.append(HeaderInfo(name=name, value=_redact_cookie(value), redacted=True))
                 else:
-                    redacted = _redact_cookie(value)
-                    result.append(HeaderInfo(name=name, value=redacted, redacted=True))
+                    # Authorization, Cookie — replace entire value.
+                    result.append(HeaderInfo(name=name, value="<redacted>", redacted=True))
                 continue
             if opts.show_all_headers:
                 result.append(HeaderInfo(name=name, value=value))
@@ -214,7 +217,7 @@ class HttpInspector:
             preview, total_lines, suppressed = _truncate(text, opts.max_body_lines)
             return BodySummary(
                 content_type=content_type,
-                detected_format="text",
+                detected_format="json",
                 size_bytes=size_bytes,
                 text_preview=preview,
                 total_lines=total_lines,
@@ -270,22 +273,27 @@ class HttpInspector:
 
 
 def _redact_cookie(value: str) -> str:
-    # Only redact the first name=value pair (the actual cookie value).
-    # Subsequent attributes (Path=/, HttpOnly, Secure, SameSite=...) are kept verbatim.
-    parts = [p.strip() for p in value.split(";")]
-    if not parts:
-        return value
-    first = parts[0]
-    if "=" in first:
-        name = first.split("=", 1)[0]
-        parts[0] = f"{name}=<redacted>"
-    return "; ".join(parts)
+    # Multiple Set-Cookie values may be folded into one comma-space-separated string.
+    # Redact each segment's first name=value pair independently.
+    # Attributes after the first ";" (Path=/, HttpOnly, SameSite=...) are kept verbatim.
+    segments = value.split(", ")
+    redacted: list[str] = []
+    for segment in segments:
+        parts = [p.strip() for p in segment.split(";")]
+        if parts and "=" in parts[0]:
+            name = parts[0].split("=", 1)[0]
+            parts[0] = f"{name}=<redacted>"
+        redacted.append("; ".join(parts))
+    return ", ".join(redacted)
 
 
 def _is_binary(content_type: str, raw: bytes) -> bool:
     text_types = ("text/", "application/json", "application/xml", "application/xhtml",
                   "application/javascript", "application/ld+json")
     if any(content_type.startswith(t) for t in text_types):
+        return False
+    # Structured-suffix types: application/vnd.api+json, application/problem+json, etc.
+    if "+json" in content_type or "+xml" in content_type:
         return False
     if content_type in ("", "application/octet-stream"):
         # Sniff: check for null bytes in first 512 bytes

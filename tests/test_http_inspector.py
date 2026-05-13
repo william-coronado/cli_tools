@@ -208,6 +208,38 @@ class TestJsonResponse:
         assert r.body.parse_error is not None
         assert len(r.warnings) > 0
 
+    @respx.mock
+    def test_invalid_json_parse_error_visible_in_markdown(self):
+        respx.get(f"{BASE}/bad-json").mock(return_value=httpx.Response(
+            200,
+            content=b'{"broken": json}',
+            headers={"content-type": "application/json"},
+        ))
+        md = _inspect(f"{BASE}/bad-json").to_markdown()
+        assert "Parse error" in md
+
+    @respx.mock
+    def test_vendor_json_content_type_parsed_as_json(self):
+        respx.get(f"{BASE}/vnd").mock(return_value=httpx.Response(
+            200,
+            json={"id": 1, "type": "article"},
+            headers={"content-type": "application/vnd.api+json"},
+        ))
+        r = _inspect(f"{BASE}/vnd")
+        assert r.body.detected_format == "json"
+        assert r.body.json_shape is not None
+
+    @respx.mock
+    def test_problem_json_content_type_parsed_as_json(self):
+        respx.get(f"{BASE}/error").mock(return_value=httpx.Response(
+            400,
+            json={"title": "Bad Request", "status": 400, "detail": "Invalid input"},
+            headers={"content-type": "application/problem+json"},
+        ))
+        r = _inspect(f"{BASE}/error")
+        assert r.body.detected_format == "json"
+        assert "title: string" in r.body.json_shape
+
 
 class TestXmlResponse:
     @respx.mock
@@ -271,6 +303,36 @@ class TestBinaryResponse:
         r = _inspect(f"{BASE}/img")
         assert r.body.detected_format == "binary"
         assert "image/png" in r.body.binary_stub
+
+    @respx.mock
+    def test_octet_stream_without_null_bytes_is_text(self):
+        respx.get(f"{BASE}/octet").mock(return_value=httpx.Response(
+            200,
+            content=b"A" * 600,
+            headers={"content-type": "application/octet-stream"},
+        ))
+        r = _inspect(f"{BASE}/octet")
+        assert r.body.detected_format == "text"
+
+    @respx.mock
+    def test_missing_content_type_with_null_bytes_is_binary(self):
+        respx.get(f"{BASE}/bin").mock(return_value=httpx.Response(
+            200,
+            content=b"\x00" + b"A" * 511,
+            headers={},
+        ))
+        r = _inspect(f"{BASE}/bin")
+        assert r.body.detected_format == "binary"
+
+    @respx.mock
+    def test_missing_content_type_without_null_bytes_is_text(self):
+        respx.get(f"{BASE}/txt").mock(return_value=httpx.Response(
+            200,
+            content=b"hello world",
+            headers={},
+        ))
+        r = _inspect(f"{BASE}/txt")
+        assert r.body.detected_format != "binary"
 
 
 # ── Headers ───────────────────────────────────────────────────────────────────
@@ -336,6 +398,30 @@ class TestHeaderFiltering:
         names = {h.name.lower() for h in r.headers}
         assert "x-custom-boring" in names
 
+    @respx.mock
+    def test_authorization_header_redacted(self):
+        respx.get(f"{BASE}/").mock(return_value=httpx.Response(
+            200, json={},
+            headers={"authorization": "Bearer supersecret", "content-type": "application/json"},
+        ))
+        r = _inspect(f"{BASE}/", show_all_headers=True)
+        auth_headers = [h for h in r.headers if h.name.lower() == "authorization"]
+        assert len(auth_headers) == 1
+        assert auth_headers[0].redacted is True
+        assert "supersecret" not in auth_headers[0].value
+
+    @respx.mock
+    def test_cookie_request_header_redacted(self):
+        respx.get(f"{BASE}/").mock(return_value=httpx.Response(
+            200, json={},
+            headers={"cookie": "token=abc999; session=xyz", "content-type": "application/json"},
+        ))
+        r = _inspect(f"{BASE}/", show_all_headers=True)
+        cookie_headers = [h for h in r.headers if h.name.lower() == "cookie"]
+        assert len(cookie_headers) == 1
+        assert cookie_headers[0].redacted is True
+        assert "abc999" not in cookie_headers[0].value
+
 
 # ── Request building ──────────────────────────────────────────────────────────
 
@@ -349,6 +435,16 @@ class TestRequestBuilding:
         opts = _opts(method="POST", data=b'{"name": "Alice"}')
         result = HttpInspector(opts).inspect(f"{BASE}/users")
         assert result.status_code == 201
+        assert route.called
+
+    @respx.mock
+    def test_empty_body_sends_post_not_get(self):
+        route = respx.post(f"{BASE}/trigger").mock(return_value=httpx.Response(
+            204, content=b"",
+        ))
+        opts = _opts(method="POST", data=b"")
+        result = HttpInspector(opts).inspect(f"{BASE}/trigger")
+        assert result.status_code == 204
         assert route.called
 
     @respx.mock
@@ -420,6 +516,16 @@ class TestCookieRedaction:
     def test_no_value(self):
         result = _redact_cookie("HttpOnly")
         assert result == "HttpOnly"
+
+    def test_folded_multi_cookie(self):
+        value = "session=abc123; Path=/, csrf=def456; HttpOnly"
+        result = _redact_cookie(value)
+        assert "abc123" not in result
+        assert "def456" not in result
+        assert "session=<redacted>" in result
+        assert "csrf=<redacted>" in result
+        assert "Path=/" in result
+        assert "HttpOnly" in result
 
 
 # ── Content sniffing ──────────────────────────────────────────────────────────
@@ -494,6 +600,86 @@ class TestRenderers:
         text = _inspect(f"{BASE}/").to_text()
         assert "200" in text
 
+    @respx.mock
+    def test_markdown_shows_parse_error(self):
+        respx.get(f"{BASE}/bad").mock(return_value=httpx.Response(
+            200,
+            content=b'{"broken": json}',
+            headers={"content-type": "application/json"},
+        ))
+        md = _inspect(f"{BASE}/bad").to_markdown()
+        assert "Parse error" in md
+
+    @respx.mock
+    def test_markdown_shows_redirect_history(self):
+        respx.get(f"{BASE}/final").mock(return_value=httpx.Response(
+            200, json={"ok": True},
+            headers={"content-type": "application/json"},
+        ))
+        # Construct a result with redirect history directly
+        from http_inspector.inspector import BodySummary, HeaderInfo, TimingInfo
+        result = HttpResult(
+            url=f"{BASE}/final",
+            method="GET",
+            status_code=200,
+            reason_phrase="OK",
+            headers=[],
+            body=BodySummary(
+                content_type="application/json",
+                detected_format="json",
+                size_bytes=10,
+                json_shape="{ok: boolean}",
+            ),
+            timing=TimingInfo(total_ms=50),
+            warnings=[],
+            redirect_history=[301, 302],
+        )
+        md = result.to_markdown()
+        assert "Redirect" in md
+        assert "301" in md
+        assert "302" in md
+
+    @respx.mock
+    def test_markdown_shows_binary_stub(self):
+        respx.get(f"{BASE}/img").mock(return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n" + b"\x00" * 50,
+            headers={"content-type": "image/png"},
+        ))
+        md = _inspect(f"{BASE}/img").to_markdown()
+        assert "image/png" in md
+
+    def test_render_text_binary_stub(self):
+        from http_inspector.inspector import BodySummary, TimingInfo
+        result = HttpResult(
+            url=f"{BASE}/bin",
+            method="GET",
+            status_code=200,
+            reason_phrase="OK",
+            headers=[],
+            body=BodySummary(
+                content_type="application/octet-stream",
+                detected_format="binary",
+                size_bytes=1024,
+                binary_stub="<binary: application/octet-stream, 1.0 KB>",
+            ),
+            timing=TimingInfo(total_ms=10),
+            warnings=[],
+        )
+        text = result.to_text()
+        assert "<binary:" in text
+
+    @respx.mock
+    def test_markdown_shows_warnings(self):
+        respx.get(f"{BASE}/bad").mock(return_value=httpx.Response(
+            200,
+            content=b'not json at all',
+            headers={"content-type": "application/json"},
+        ))
+        md = _inspect(f"{BASE}/bad").to_markdown()
+        # Warnings surfaced via parse error path
+        assert "Parse error" in md or "warning" in md.lower()
+
 
 # ── Exit codes (subprocess) ───────────────────────────────────────────────────
 
@@ -505,7 +691,9 @@ class TestExitCodes:
         )
 
     def test_one_on_network_error(self):
-        r = self._run("http://localhost:19999/no-such-host-cli-test")
+        with patch("http_inspector.inspector.HttpInspector.inspect",
+                   side_effect=ValueError("connection refused")):
+            r = self._run("https://api.example.com/fail")
         assert r.returncode == 1
 
     def test_json_output_valid(self):

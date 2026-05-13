@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Parse body
     body: bytes | None = None
-    if args.data:
+    if args.data is not None:
         if args.data.startswith("@"):
             path_str = args.data[1:]
             if path_str == "-":
