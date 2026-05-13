@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         renderer = Renderer()
 
         if repo_mode:
-            ctx = extractor.get_repo_context()
+            ctx = extractor.get_repo_context(skip_diff=args.no_diff)
             if args.format == "json":
                 output = renderer.to_json(ctx)
             else:

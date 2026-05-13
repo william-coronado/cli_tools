@@ -362,7 +362,7 @@ class TestGetFileContext:
 
 
 class TestGetRepoContext:
-    def test_returns_repo_context(self, tmp_path):
+    def _make_repo_extractor(self, tmp_path):
         extractor = _make_extractor(tmp_path)
 
         def _run(*args, **kwargs):
@@ -371,7 +371,7 @@ class TestGetRepoContext:
             if "log" in args:
                 return LOG_SIMPLE
             if "diff" in args:
-                return ""
+                return DIFF_MODIFIED
             if "stash" in args:
                 return ""
             if "describe" in args:
@@ -380,10 +380,29 @@ class TestGetRepoContext:
 
         extractor._runner.run.side_effect = _run
         extractor._runner.get_repo_root.return_value = tmp_path
+        return extractor
 
+    def test_returns_repo_context(self, tmp_path):
+        extractor = self._make_repo_extractor(tmp_path)
         ctx = extractor.get_repo_context()
         assert isinstance(ctx, RepoContext)
         assert ctx.recent_commits
+
+    def test_skip_diff_omits_uncommitted(self, tmp_path):
+        extractor = self._make_repo_extractor(tmp_path)
+        ctx = extractor.get_repo_context(skip_diff=True)
+        assert ctx.uncommitted_diff == []
+
+    def test_skip_diff_does_not_call_diff_runner(self, tmp_path):
+        extractor = self._make_repo_extractor(tmp_path)
+        extractor.get_repo_context(skip_diff=True)
+        diff_calls = [c for c in extractor._runner.run.call_args_list if "diff" in c.args]
+        assert not diff_calls, "expected no 'diff' git calls when skip_diff=True"
+
+    def test_no_diff_flag_repo_mode(self, tmp_path):
+        from git_context.cli import main
+        rc = main([str(tmp_path), "--no-diff"])
+        assert rc in (0, 1)  # passes through without AttributeError
 
 
 # ── Diff truncation ───────────────────────────────────────────────────────────

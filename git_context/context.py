@@ -281,7 +281,7 @@ class GitContextExtractor:
 
     # ── Repo Mode ─────────────────────────────────────────────────────────────
 
-    def get_repo_context(self) -> RepoContext:
+    def get_repo_context(self, skip_diff: bool = False) -> RepoContext:
         from .git_runner import GitError
 
         repo_root = self._runner.get_repo_root()
@@ -294,7 +294,7 @@ class GitContextExtractor:
                 active_files[f] = active_files.get(f, 0) + 1
         sorted_active = sorted(active_files, key=lambda f: -active_files[f])
 
-        uncommitted = self._get_uncommitted_diff()
+        uncommitted = [] if skip_diff else self._get_uncommitted_diff()
 
         stash_count = self._get_stash_count()
 
