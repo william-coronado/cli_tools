@@ -558,6 +558,86 @@ class TestSchemaSimplification:
         result = simplify_schema(schema, {}, max_depth=1)
         assert "{...}" in result
 
+    def test_allof_joins_with_ampersand(self):
+        schema = {
+            "allOf": [
+                {"type": "object", "properties": {"id": {"type": "integer"}}},
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+            ]
+        }
+        result = simplify_schema(schema, {})
+        assert " & " in result
+        assert "id: integer" in result
+        assert "name: string" in result
+
+    def test_allof_with_refs(self):
+        schema = {
+            "allOf": [
+                {"$ref": "#/components/schemas/Base"},
+                {"type": "object", "properties": {"extra": {"type": "boolean"}}},
+            ]
+        }
+        components = {"Base": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+        result = simplify_schema(schema, components)
+        assert " & " in result
+        assert "id: integer" in result
+        assert "extra: boolean" in result
+
+    def test_oneof_joins_with_pipe(self):
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "integer"},
+                {"type": "null"},
+            ]
+        }
+        result = simplify_schema(schema, {})
+        assert " | " in result
+        assert "string" in result
+        assert "integer" in result
+        assert "null" in result
+
+    def test_anyof_joins_with_pipe(self):
+        schema = {
+            "anyOf": [
+                {"type": "object", "properties": {"value": {"type": "number"}}},
+                {"type": "null"},
+            ]
+        }
+        result = simplify_schema(schema, {})
+        assert " | " in result
+        assert "null" in result
+
+    def test_oneof_truncates_beyond_three_variants(self):
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "integer"},
+                {"type": "number"},
+                {"type": "boolean"},
+            ]
+        }
+        result = simplify_schema(schema, {})
+        # Only first 3 variants shown, so boolean should not appear
+        assert "boolean" not in result
+        assert result.count("|") == 2   # 3 variants → 2 separators
+
+    def test_oneof_with_refs(self):
+        schema = {
+            "oneOf": [
+                {"$ref": "#/components/schemas/Cat"},
+                {"$ref": "#/components/schemas/Dog"},
+            ]
+        }
+        components = {
+            "Cat": {"type": "object", "properties": {"meows": {"type": "boolean"}}},
+            "Dog": {"type": "object", "properties": {"barks": {"type": "boolean"}}},
+        }
+        result = simplify_schema(schema, components)
+        assert " | " in result
+        assert "meows" in result
+        assert "barks" in result
+
 
 # ── URL input ─────────────────────────────────────────────────────────────────
 
