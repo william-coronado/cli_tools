@@ -173,52 +173,52 @@ Each tool provides `mcp_tool.py`. Register tools in `.claude/mcp.json` (already 
     {
       "name": "extract_pdf_text",
       "command": ["python", "-m", "pdf_extractor.mcp_tool"],
-      "cwd": "~/dev/cli_tools/pdf_extractor"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "fetch_url",
       "command": ["python", "-m", "url_fetcher.mcp_tool"],
-      "cwd": "~/dev/cli_tools/url_fetcher"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "summarize_log",
       "command": ["python", "-m", "log_summarizer.mcp_tool"],
-      "cwd": "~/dev/cli_tools/log_summarizer"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "index_codebase",
       "command": ["python", "-m", "codebase_indexer.mcp_tool"],
-      "cwd": "~/dev/cli_tools/codebase_indexer"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "smart_file_tree",
       "command": ["python", "-m", "smart_file_tree.mcp_tool"],
-      "cwd": "~/dev/cli_tools/smart_file_tree"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "git_file_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "~/dev/cli_tools/git_context"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "git_repo_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "~/dev/cli_tools/git_context"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "summarize_data",
       "command": ["python", "-m", "data_summarizer.mcp_tool"],
-      "cwd": "~/dev/cli_tools/data_summarizer"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "inspect_dependencies",
       "command": ["python", "-m", "dep_inspector.mcp_tool"],
-      "cwd": "~/dev/cli_tools/dep_inspector"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "extract_notebook",
       "command": ["python", "-m", "notebook_extractor.mcp_tool"],
-      "cwd": "~/dev/cli_tools/notebook_extractor"
+      "cwd": "~/dev/cli_tools"
     }
   ]
 }

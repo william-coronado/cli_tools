@@ -124,52 +124,52 @@ with the absolute path to your project root.
     {
       "name": "extract_pdf_text",
       "command": ["python", "-m", "pdf_extractor.mcp_tool"],
-      "cwd": "/absolute/path/to/project/pdf_extractor"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "index_codebase",
       "command": ["python", "-m", "codebase_indexer.mcp_tool"],
-      "cwd": "/absolute/path/to/project/codebase_indexer"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "smart_file_tree",
       "command": ["python", "-m", "smart_file_tree.mcp_tool"],
-      "cwd": "/absolute/path/to/project/smart_file_tree"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "fetch_url",
       "command": ["python", "-m", "url_fetcher.mcp_tool"],
-      "cwd": "/absolute/path/to/project/url_fetcher"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "summarize_log",
       "command": ["python", "-m", "log_summarizer.mcp_tool"],
-      "cwd": "/absolute/path/to/project/log_summarizer"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "git_file_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "/absolute/path/to/project/git_context"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "git_repo_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "/absolute/path/to/project/git_context"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "summarize_data",
       "command": ["python", "-m", "data_summarizer.mcp_tool"],
-      "cwd": "/absolute/path/to/project/data_summarizer"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "inspect_dependencies",
       "command": ["python", "-m", "dep_inspector.mcp_tool"],
-      "cwd": "/absolute/path/to/project/dep_inspector"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "extract_notebook",
       "command": ["python", "-m", "notebook_extractor.mcp_tool"],
-      "cwd": "/absolute/path/to/project/notebook_extractor"
+      "cwd": "/absolute/path/to/project"
     }
   ]
 }

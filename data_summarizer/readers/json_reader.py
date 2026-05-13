@@ -32,9 +32,7 @@ class JSONReader(Reader):
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}")
 
-        elapsed_ms_pre = int((time.monotonic() - t0) * 1000)
-
-        if isinstance(data, list) and all(isinstance(r, dict) for r in data[:50]):
+        if isinstance(data, list) and all(isinstance(r, dict) for r in data):
             # Array of records → tabular path
             table = self._summarize_array_of_records(data, path, opts)
             return DataSummary(
