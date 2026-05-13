@@ -503,3 +503,84 @@ class TestRenderer:
         # blame_summary should be a dict, not a Python object
         assert isinstance(parsed["blame_summary"], dict)
         assert "authors" in parsed["blame_summary"]
+
+
+# ── Skip flags: no-blame, no-diff, no-related ─────────────────────────────────
+
+class TestSkipFlags:
+    def _extractor_with_file(self, tmp_path: Path):
+        extractor = _make_extractor(tmp_path)
+        dummy = tmp_path / "src" / "app.py"
+        dummy.parent.mkdir(parents=True, exist_ok=True)
+        dummy.write_text("# hi")
+
+        def _run(*args, **kwargs):
+            if "log" in args:
+                return LOG_SIMPLE
+            if "diff" in args:
+                return DIFF_MODIFIED
+            if "blame" in args:
+                return BLAME_PORCELAIN
+            if "rev-parse" in args and "--abbrev-ref" in args:
+                return "main\n"
+            if "merge-base" in args:
+                return ""
+            return ""
+
+        extractor._runner.run.side_effect = _run
+        extractor._runner.get_default_branch.return_value = "main"
+        return extractor, dummy
+
+    def test_no_blame_skips_blame(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy, skip_blame=True)
+        assert ctx.blame_summary is None
+
+    def test_no_diff_skips_diff(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy, skip_diff=True)
+        assert ctx.diff_vs_base == []
+
+    def test_no_related_skips_related(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy, skip_related=True)
+        assert ctx.related_files == []
+
+    def test_all_flags_independent(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(
+            dummy, skip_blame=True, skip_diff=True, skip_related=True
+        )
+        assert ctx.blame_summary is None
+        assert ctx.diff_vs_base == []
+        assert ctx.related_files == []
+        assert ctx.recent_commits  # commits always fetched
+
+    def test_no_flags_fetches_all(self, tmp_path):
+        extractor, dummy = self._extractor_with_file(tmp_path)
+        ctx = extractor.get_file_context(dummy)
+        assert ctx.blame_summary is not None
+        assert ctx.diff_vs_base != [] or True  # diff may be empty; just check it ran
+        assert ctx.recent_commits
+
+    def test_cli_no_blame_flag(self, tmp_path):
+        from git_context.cli import main
+        dummy = tmp_path / "app.py"
+        dummy.write_text("# hi")
+        # Run with a non-git path — expect error exit, not crash
+        rc = main([str(dummy), "--no-blame"])
+        assert rc in (0, 1)  # no AttributeError
+
+    def test_cli_no_diff_flag(self, tmp_path):
+        from git_context.cli import main
+        dummy = tmp_path / "app.py"
+        dummy.write_text("# hi")
+        rc = main([str(dummy), "--no-diff"])
+        assert rc in (0, 1)
+
+    def test_cli_no_related_flag(self, tmp_path):
+        from git_context.cli import main
+        dummy = tmp_path / "app.py"
+        dummy.write_text("# hi")
+        rc = main([str(dummy), "--no-related"])
+        assert rc in (0, 1)

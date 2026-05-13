@@ -163,6 +163,9 @@ class GitContextExtractor:
         self,
         file_path: str | Path,
         base: str | None = None,
+        skip_blame: bool = False,
+        skip_diff: bool = False,
+        skip_related: bool = False,
     ) -> FileContext:
         from .git_runner import FileNotTrackedError
 
@@ -182,9 +185,9 @@ class GitContextExtractor:
 
         resolved_base = base or self._resolve_base()
         commits = self._get_file_commits(rel_path)
-        diffs = self._get_file_diff(rel_path, resolved_base)
-        blame = self._get_blame_summary(rel_path)
-        related = self._get_related_files(rel_path, commits)
+        diffs = [] if skip_diff else self._get_file_diff(rel_path, resolved_base)
+        blame = None if skip_blame else self._get_blame_summary(rel_path)
+        related = [] if skip_related else self._get_related_files(rel_path, commits)
 
         branch = self._runner.run("rev-parse", "--abbrev-ref", "HEAD").strip()
 

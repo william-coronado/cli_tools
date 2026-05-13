@@ -56,9 +56,19 @@ def test_no_gitignore_flag(sample_tree):
 
 def test_file_count(sample_tree):
     result = build(sample_tree)
-    # Expected files: src/main.py, src/utils.py, tests/test_main.py,
-    #   README.md, large_file.bin, empty_file.txt, .gitignore
-    assert result.total_files == 7
+    # Default hides dotfiles: src/main.py, src/utils.py, tests/test_main.py,
+    #   README.md, large_file.bin, empty_file.txt  (no .gitignore)
+    assert result.total_files == 6
+
+
+def test_show_hidden_includes_dotfiles(sample_tree):
+    result_default = build(sample_tree)
+    result_shown = build(sample_tree, show_hidden=True)
+    names_default = {n.name for n in result_default.nodes if not n.is_dir}
+    names_shown = {n.name for n in result_shown.nodes if not n.is_dir}
+    assert ".gitignore" not in names_default
+    assert ".gitignore" in names_shown
+    assert result_shown.total_files > result_default.total_files
 
 
 # ── Annotations ───────────────────────────────────────────────────────────────
@@ -142,9 +152,9 @@ def test_modified_after_future(sample_tree):
 
 
 def test_modified_after_past(sample_tree):
-    # Filter to files modified after epoch → should return everything
+    # Filter to files modified after epoch → all non-hidden files visible
     result = build(sample_tree, modified_after=0.0)
-    assert result.total_files == 7
+    assert result.total_files == 6
 
 
 # ── Extension filter ──────────────────────────────────────────────────────────
@@ -256,10 +266,41 @@ def test_cli_json(sample_tree, capsys):
     assert rc == 0
     captured = capsys.readouterr()
     data = json.loads(captured.out)
-    assert data["total_files"] == 7
+    assert data["total_files"] == 6
+
+
+def test_cli_show_hidden(sample_tree, capsys):
+    from smart_file_tree.cli import main
+    rc = main([str(sample_tree), "--show-hidden", "--format", "json"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["total_files"] == 7  # includes .gitignore
 
 
 def test_cli_nonexistent_path(capsys):
     from smart_file_tree.cli import main
     rc = main(["/does/not/exist"])
     assert rc == 1
+
+
+# ── Symlink handling ──────────────────────────────────────────────────────────
+
+def test_relative_symlink_valid(tmp_path):
+    target = tmp_path / "real.txt"
+    target.write_text("hello")
+    link = tmp_path / "link.txt"
+    import os
+    os.symlink("real.txt", link)   # relative target
+    result = build(tmp_path, show_hidden=True)
+    names = [n.name for n in result.nodes if not n.is_dir]
+    assert any("link.txt" in n and "broken" not in n for n in names)
+
+
+def test_relative_symlink_broken(tmp_path):
+    link = tmp_path / "broken.txt"
+    import os
+    os.symlink("nonexistent.txt", link)  # relative, dangling
+    result = build(tmp_path, show_hidden=True)
+    names = [n.name for n in result.nodes if not n.is_dir]
+    assert any("broken symlink" in n for n in names)

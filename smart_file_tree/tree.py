@@ -76,6 +76,7 @@ def build(
     large_threshold: int = 1_048_576,
     recent_window: int = 86_400 * 7,
     sort: str = "alpha",
+    show_hidden: bool = False,
 ) -> TreeResult:
     from .walker import TreeWalker
     from .annotator import FileAnnotator
@@ -87,6 +88,7 @@ def build(
         respect_gitignore=respect_gitignore,
         max_depth=max_depth,
         focus_path=focus_path,
+        show_hidden=show_hidden,
     )
     annotator = FileAnnotator(
         large_file_threshold=large_threshold,

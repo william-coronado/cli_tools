@@ -108,25 +108,36 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _apply_file_window(path: Path, tail: int | None, head: int | None):
-    """For tail/head mode on files, return a line iterator using deque."""
+    """Return path unchanged (no window), or a closed-over generator for tail/head."""
     if tail is None and head is None:
         return path
-    return _apply_window(_open_binary(path), tail, head)
+    return _windowed_file(path, tail, head)
 
 
-def _open_binary(path: Path):
-    return open(path, "rb")
+def _windowed_file(path: Path, tail: int | None, head: int | None):
+    """Generator that opens the file in a with-block, applies windowing, then closes."""
+    import itertools
+    with open(path, "rb") as f:
+        if tail is not None:
+            buf: deque = deque(maxlen=tail)
+            for line in f:
+                buf.append(line)
+            yield from buf
+        elif head is not None:
+            yield from itertools.islice(f, head)
+        else:
+            yield from f
 
 
 def _apply_window(source, tail: int | None, head: int | None):
-    """Wrap source with tail/head windowing using deque (stdin-safe)."""
+    """Wrap a non-file source (stdin) with tail/head windowing (stdin-safe)."""
+    import itertools
     if tail is not None:
         buf: deque = deque(maxlen=tail)
         for line in source:
             buf.append(line)
         return iter(buf)
     elif head is not None:
-        import itertools
         return itertools.islice(source, head)
     return source
 

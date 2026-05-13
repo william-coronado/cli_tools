@@ -1,5 +1,5 @@
 from __future__ import annotations
-import subprocess
+import subprocess  # used only by GitRunner.run internals
 from pathlib import Path
 
 
@@ -81,30 +81,16 @@ class GitRunner:
             return ref.split("/")[-1]
 
         # 2. Does "main" exist?
-        result = subprocess.run(
-            [self.git_binary, "rev-parse", "--verify", "main"],
-            cwd=self.repo_path,
-            capture_output=True,
-        )
-        if result.returncode == 0:
+        if self.run("rev-parse", "--verify", "main", check=False).strip():
             return "main"
 
         # 3. Does "master" exist?
-        result = subprocess.run(
-            [self.git_binary, "rev-parse", "--verify", "master"],
-            cwd=self.repo_path,
-            capture_output=True,
-        )
-        if result.returncode == 0:
+        if self.run("rev-parse", "--verify", "master", check=False).strip():
             return "master"
 
         # 4. Fall back to current branch
         return self.run("rev-parse", "--abbrev-ref", "HEAD").strip()
 
     def file_exists_in_git(self, file_path: str) -> bool:
-        result = subprocess.run(
-            [self.git_binary, "ls-files", "--error-unmatch", file_path],
-            cwd=self.repo_path,
-            capture_output=True,
-        )
-        return result.returncode == 0
+        result = self.run("ls-files", "--error-unmatch", file_path, check=False)
+        return bool(result.strip())

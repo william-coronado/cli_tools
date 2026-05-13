@@ -23,11 +23,13 @@ class TreeWalker:
         max_depth: int | None = None,
         focus_path: Path | None = None,
         max_children: int = _MAX_CHILDREN_DEFAULT,
+        show_hidden: bool = False,
     ):
         self._root = root
         self._max_depth = max_depth
         self._focus_path = focus_path
         self._max_children = max_children
+        self._show_hidden = show_hidden
         self._rules = ExclusionRules(
             root=root,
             respect_gitignore=respect_gitignore,
@@ -58,6 +60,10 @@ class TreeWalker:
         for entry in entries:
             path = Path(entry.path)
 
+            if not self._show_hidden and entry.name.startswith("."):
+                skipped += 1
+                continue
+
             if self._rules.is_excluded(path):
                 skipped += 1
                 continue
@@ -73,7 +79,8 @@ class TreeWalker:
             if is_symlink:
                 try:
                     target = os.readlink(path)
-                    if not Path(target).exists():
+                    resolved = Path(target) if os.path.isabs(target) else path.parent / target
+                    if not resolved.exists():
                         display = f"{entry.name} [broken symlink]"
                     else:
                         display = f"{entry.name} → {target}"
