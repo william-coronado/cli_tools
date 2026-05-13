@@ -1,0 +1,2 @@
+# Core (always required)
+pathspec>=0.11.0

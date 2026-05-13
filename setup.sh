@@ -48,7 +48,7 @@ fi
 
 # ── pip install ────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}Installing Python dependencies${RESET}"
-TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer)
+TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor)
 for tool in "${TOOLS[@]}"; do
     req="$tool/requirements.txt"
     if [ ! -f "$req" ]; then
@@ -135,6 +135,14 @@ if python3 -c "import openpyxl" &>/dev/null 2>&1; then
 else
     warn "openpyxl not installed (optional) — data_summarizer can't read .xlsx."
     warn "  pip install openpyxl"
+fi
+
+# pyyaml (optional — dep_inspector pnpm-lock.yaml support)
+if python3 -c "import yaml" &>/dev/null 2>&1; then
+    ok "pyyaml  (dep_inspector pnpm-lock.yaml support)"
+else
+    warn "pyyaml not installed (optional) — dep_inspector can't parse pnpm-lock.yaml."
+    warn "  pip install pyyaml"
 fi
 
 # ── Smoke test: import each tool ───────────────────────────────────────────────

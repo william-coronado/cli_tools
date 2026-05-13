@@ -1,6 +1,6 @@
 # Claude Code Token-Saving Tools
 
-A suite of seven Python CLI tools that pre-process common inputs before handing them
+A suite of nine Python CLI tools that pre-process common inputs before handing them
 to Claude Code — cutting token consumption by 10–100× on typical tasks.
 
 Each tool is independently installable, exposes a consistent CLI interface, and
@@ -20,6 +20,8 @@ a bash step.
 | [`log_summarizer`](#log-summarizer) | Reading large log files line by line | 10 MB → ~30 lines of signal |
 | [`git_context`](#git-context) | 5–8 sequential `git` commands per file | Multi-command → single call |
 | [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | 100 MB → schema + sample + stats |
+| [`dep_inspector`](#dep_inspector) | Reading raw lockfiles (500 KB+ package-lock.json) | Declared/resolved/transitive + outdated/audit |
+| [`notebook_extractor`](#notebook_extractor) | Reading raw .ipynb with base64/stream noise | Clean cells + stubbed images + deduped streams |
 
 ---
 
@@ -39,6 +41,7 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 ├── log_summarizer/
 ├── git_context/
 ├── data_summarizer/
+├── dep_inspector/
 └── tests/
     └── fixtures/           # HTML, log, and PDF test fixtures
 ```
@@ -75,6 +78,8 @@ pip install -r url_fetcher/requirements.txt
 pip install -r log_summarizer/requirements.txt
 pip install -r git_context/requirements.txt
 pip install -r data_summarizer/requirements.txt
+pip install -r dep_inspector/requirements.txt
+pip install -r notebook_extractor/requirements.txt
 ```
 
 ### 3. System dependencies
@@ -88,6 +93,8 @@ Some tools require system packages beyond pip:
 | `url_fetcher` | Playwright + Chromium *(optional, JS pages only)* | `pip install playwright && playwright install chromium` |
 | `git_context` | Git ≥ 2.11 | Pre-installed on most systems |
 | `data_summarizer` | pandas / pyarrow / openpyxl *(optional)* | `pip install pandas pyarrow openpyxl` |
+| `dep_inspector` | pyyaml *(optional, pnpm-lock.yaml only)* | `pip install pyyaml` |
+| `notebook_extractor` | *(none — stdlib + pathspec only)* | — |
 
 ### 4. Verify installation
 
@@ -99,6 +106,8 @@ python -m url_fetcher.cli --help
 python -m log_summarizer.cli --help
 python -m git_context.cli --help
 python -m data_summarizer.cli --help
+python -m dep_inspector.cli --help
+python -m notebook_extractor.cli --help
 ```
 
 ---
@@ -151,6 +160,16 @@ with the absolute path to your project root.
       "name": "summarize_data",
       "command": ["python", "-m", "data_summarizer.mcp_tool"],
       "cwd": "/absolute/path/to/project/data_summarizer"
+    },
+    {
+      "name": "inspect_dependencies",
+      "command": ["python", "-m", "dep_inspector.mcp_tool"],
+      "cwd": "/absolute/path/to/project/dep_inspector"
+    },
+    {
+      "name": "extract_notebook",
+      "command": ["python", "-m", "notebook_extractor.mcp_tool"],
+      "cwd": "/absolute/path/to/project/notebook_extractor"
     }
   ]
 }
@@ -466,6 +485,99 @@ summarize_data(path="huge.csv", max_rows=50000, no_stats=true)
 
 **Exit codes:** `0` success · `1` input/parse error · `3` wrong content type
 (no reader matches) · `4` missing optional dep (e.g. Parquet without pyarrow).
+
+---
+
+### `dep_inspector`
+
+Inspects Python and JavaScript dependency manifests and lockfiles, returning
+declared dependencies, resolved versions, a top-transitive summary, and
+optional outdated/vulnerability checks — without dumping the raw lockfile
+(which is routinely 500 KB+).
+
+Supports: `requirements.txt`, `pyproject.toml` (PEP 621 + Poetry),
+`poetry.lock`, `uv.lock`, `Pipfile.lock` (Python); `package.json`,
+`package-lock.json` v2/v3, `pnpm-lock.yaml` (npm). `yarn.lock` falls back to
+declared-only with a warning.
+
+Network features (`--outdated`, `--audit`) are opt-in and fail open: network
+failures produce a warning on stderr and exit 0.
+
+**Common usage:**
+```bash
+# Inspect a Python project
+python -m dep_inspector.cli path/to/project
+
+# Inspect a JS project, show latest versions from npm registry
+python -m dep_inspector.cli path/to/project --outdated
+
+# Vulnerability audit via OSV
+python -m dep_inspector.cli path/to/project --audit
+
+# Only show critical/high advisories
+python -m dep_inspector.cli path/to/project --audit --severity critical,high
+
+# Show full transitive list instead of top-K summary
+python -m dep_inspector.cli path/to/project --all
+
+# Exclude devDependencies
+python -m dep_inspector.cli path/to/project --no-dev
+
+# Both outdated + audit, JSON output
+python -m dep_inspector.cli path/to/project --outdated --audit --format json
+```
+
+**MCP usage:**
+```
+inspect_dependencies(path=".")
+inspect_dependencies(path=".", outdated=true)
+inspect_dependencies(path=".", audit=true, severity=["critical", "high"])
+inspect_dependencies(path=".", direct_only=true, no_dev=true)
+```
+
+**Exit codes:** `0` success (including degraded-network) · `1` input/parse
+error · `3` no supported manifest found · `4` missing optional dep.
+
+---
+
+### `notebook_extractor`
+
+Extracts code and markdown from Jupyter `.ipynb` notebooks, stripping
+base64 images (→ `<image: png 800×600, 42 KB>` stubs), truncating long
+outputs, and deduplicating repetitive progress-bar streams. No optional
+dependencies — only stdlib and pathspec.
+
+**Common usage:**
+```bash
+# Whole notebook
+python -m notebook_extractor.cli analysis.ipynb
+
+# First 20 cells only
+python -m notebook_extractor.cli analysis.ipynb --cells 0:20
+
+# Code cells only, no outputs
+python -m notebook_extractor.cli analysis.ipynb --code-only --no-outputs
+
+# Cells tagged "training" only, keep 10 output lines max
+python -m notebook_extractor.cli analysis.ipynb --tag training --max-output-lines 10
+
+# Directory of notebooks (respects .gitignore)
+python -m notebook_extractor.cli notebooks/ --recursive
+
+# JSON output for structured processing
+python -m notebook_extractor.cli analysis.ipynb --format json
+```
+
+**MCP usage:**
+```
+extract_notebook(path="analysis.ipynb")
+extract_notebook(path="analysis.ipynb", cells="0:20", max_output_lines=10)
+extract_notebook(path="analysis.ipynb", code_only=true, no_outputs=true)
+extract_notebook(path="analysis.ipynb", tags=["training", "viz"])
+```
+
+**Exit codes:** `0` success · `1` file not found or not a notebook ·
+`3` no `.ipynb` files found in directory.
 
 ---
 
