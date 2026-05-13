@@ -88,17 +88,17 @@ class NotebookExtractor:
             or data.get("metadata", {}).get("language_info", {}).get("name")
         )
 
-        raw_cells = data.get("cells", [])
-        total_cells = len(raw_cells)
+        all_cells = data.get("cells", [])
+        total_cells = len(all_cells)
         warnings: list[str] = []
 
-        # Apply slice first
         opts = self.options
+        indexed_cells: list[tuple[int, dict]] = list(enumerate(all_cells))
         if opts.cells_slice is not None:
-            raw_cells = raw_cells[opts.cells_slice]
+            indexed_cells = indexed_cells[opts.cells_slice]
 
         cells: list[NotebookCell] = []
-        for i, raw in enumerate(raw_cells):
+        for original_index, raw in indexed_cells:
             cell_type = raw.get("cell_type", "raw")
             # Type filter
             if opts.code_only and cell_type != "code":
@@ -119,10 +119,8 @@ class NotebookExtractor:
                     if co is not None:
                         outputs.append(co)
 
-            # Recover original notebook index (before slice)
-            original_index = raw_cells.index(raw) if opts.cells_slice is not None else i
             cells.append(NotebookCell(
-                index=i,
+                index=original_index,
                 cell_type=cell_type,
                 source=source,
                 outputs=outputs,
@@ -227,7 +225,7 @@ def _image_stub(mime: str, b64: str) -> str:
     # Try to extract image dimensions
     w, h = None, None
     try:
-        raw = base64.b64decode(b64 + "==")
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
         if raw[:4] == b"\x89PNG":
             import struct
             w, h = struct.unpack(">II", raw[16:24])

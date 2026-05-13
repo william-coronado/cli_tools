@@ -128,6 +128,4 @@ class ParquetReader(Reader):
                 "Install with: pip install pyarrow"
             )
         except Exception as e:
-            raise MissingOptionalDep(
-                f"Parquet read failed: {e}. Install pyarrow: pip install pyarrow"
-            )
+            raise ValueError(f"Failed to read parquet file: {e}")

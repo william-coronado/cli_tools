@@ -79,11 +79,11 @@ class Renderer:
                 lines.append("")
                 lines.append(f"## Table: `{table.name}`  ({_fmt_int(table.row_count)} rows · {table.column_count} cols)")
                 lines.append("")
-            lines.extend(self._render_table_markdown(table, sub_heading=multi_table))
+            lines.extend(self._render_table_markdown(table, sub_heading=multi_table, cell_width=r.max_cell_width))
 
         return "\n".join(lines).rstrip() + "\n"
 
-    def _render_table_markdown(self, t: TableSummary, sub_heading: bool = False) -> list[str]:
+    def _render_table_markdown(self, t: TableSummary, sub_heading: bool = False, cell_width: int = 80) -> list[str]:
         h = "###" if sub_heading else "##"
         lines: list[str] = []
 
@@ -126,11 +126,11 @@ class Renderer:
             lines.append("| " + " | ".join(f"`{n}`" for n in shown_cols) + " |")
             lines.append("|" + "|".join("---" for _ in shown_cols) + "|")
             for row in t.head:
-                lines.append("| " + " | ".join(_truncate_cell(row.get(c), 80) for c in shown_cols) + " |")
+                lines.append("| " + " | ".join(_truncate_cell(row.get(c), cell_width) for c in shown_cols) + " |")
             if t.head and t.tail:
                 lines.append("| " + " | ".join("…" for _ in shown_cols) + " |")
             for row in t.tail:
-                lines.append("| " + " | ".join(_truncate_cell(row.get(c), 80) for c in shown_cols) + " |")
+                lines.append("| " + " | ".join(_truncate_cell(row.get(c), cell_width) for c in shown_cols) + " |")
             lines.append("")
 
         # Stats

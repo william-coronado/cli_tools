@@ -28,12 +28,13 @@ class Renderer:
         if r.warnings:
             lines.append("")
 
+        cell_lang = r.language or r.kernel_name or ""
         for cell in r.cells:
-            lines.extend(self._render_cell(cell))
+            lines.extend(self._render_cell(cell, lang=cell_lang))
 
         return "\n".join(lines).rstrip() + "\n"
 
-    def _render_cell(self, cell: NotebookCell) -> list[str]:
+    def _render_cell(self, cell: NotebookCell, lang: str = "") -> list[str]:
         lines: list[str] = ["---", ""]
 
         # Cell header
@@ -43,7 +44,7 @@ class Renderer:
 
         if cell.source.strip():
             if cell.cell_type == "code":
-                lines.append("```python")
+                lines.append(f"```{lang}")
                 lines.append(cell.source)
                 lines.append("```")
             else:

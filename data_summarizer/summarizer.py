@@ -66,6 +66,7 @@ class DataSummary:
     tables: list[TableSummary] = field(default_factory=list)
     structures: list[StructureSummary] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    max_cell_width: int = 80
 
     def to_markdown(self) -> str:
         from .renderer import Renderer
@@ -109,4 +110,6 @@ class DataSummarizer:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         reader = dispatch_reader(path, self.options.format_hint)
-        return reader.read(path, self.options)
+        result = reader.read(path, self.options)
+        result.max_cell_width = self.options.max_cell_width
+        return result

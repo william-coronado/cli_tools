@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 
-_WINDOW = 5
 _THRESHOLD = 3
 
 
@@ -25,9 +24,8 @@ def _cr_strip(text: str) -> str:
     """Handle carriage-return overwriting (tqdm-style progress bars)."""
     result_lines: list[str] = []
     for line in text.split("\n"):
-        # Split on \r and keep only the last non-empty segment
         parts = line.split("\r")
-        kept = parts[-1] if parts else ""
+        kept = next((p for p in reversed(parts) if p), "")
         result_lines.append(kept)
     return "\n".join(result_lines)
 

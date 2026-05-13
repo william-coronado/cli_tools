@@ -53,7 +53,7 @@ def _content_sniff(path: Path) -> str | None:
         return None
     first = sample[:1]
     if first in (b"{", b"["):
-        return "json" if first == b"{" else "jsonl"
+        return "json"
     # SQLite magic header
     if head.startswith(b"SQLite format 3\x00"):
         return "sqlite"

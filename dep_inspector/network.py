@@ -1,7 +1,6 @@
 """HTTP layer for outdated checks (PyPI/npm) and OSV vulnerability audit."""
 from __future__ import annotations
 
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable
 
