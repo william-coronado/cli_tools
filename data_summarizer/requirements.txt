@@ -1,0 +1,8 @@
+# Core (always required)
+pathspec>=0.11.0
+
+# Optional (richer stats / additional formats):
+#   pip install pandas pyarrow openpyxl
+# pandas    — richer CSV stats and type inference
+# pyarrow   — Parquet support
+# openpyxl  — .xlsx support

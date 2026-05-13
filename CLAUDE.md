@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A suite of six Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
+A suite of nine Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
 
 | Tool | Purpose |
 |---|---|
@@ -14,6 +14,9 @@ A suite of six Python CLI tools that pre-process inputs before passing them to C
 | `url_fetcher` | Fetches URLs as clean markdown; strips nav/footers/ads/scripts |
 | `log_summarizer` | Parses log files and returns only errors, warnings, tracebacks, and metrics |
 | `git_context` | Extracts focused git context (commits, diff, blame, status) for a file or repo |
+| `data_summarizer` | Summarizes CSV/TSV/JSON/JSONL/Parquet/Excel/SQLite files: schema + sample + stats |
+| `dep_inspector` | Inspects Python/JS manifests + lockfiles: declared/resolved/transitive + outdated/audit |
+| `notebook_extractor` | Extracts code/markdown from .ipynb; stubs images, truncates outputs, dedupes streams |
 
 ## Setup
 
@@ -32,6 +35,9 @@ System dependencies:
 - `pdf_extractor`: Tesseract OCR (`apt install tesseract-ocr`) + Poppler (`apt install poppler-utils`)
 - `url_fetcher`: Playwright + Chromium is optional for JS pages — `pip install playwright && playwright install chromium`
 - `git_context`: Git ≥ 2.11
+- `data_summarizer`: pandas / pyarrow / openpyxl are optional — `pip install pandas pyarrow openpyxl` (stdlib paths cover CSV/JSON/JSONL/SQLite without any of them)
+- `dep_inspector`: pyyaml is optional (pnpm-lock.yaml only) — `pip install pyyaml`
+- `notebook_extractor`: no system deps; pathspec only (already installed)
 
 Verify:
 ```bash
@@ -99,6 +105,30 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 │   ├── parsers/            # log, diff, blame, status parsers
 │   ├── mcp_tool.py
 │   └── requirements.txt
+├── data_summarizer/
+│   ├── cli.py
+│   ├── summarizer.py       # DataSummarizer + dataclasses (DataSummary, TableSummary, ...)
+│   ├── renderer.py         # markdown/json/text renderers
+│   ├── stats.py            # Streaming per-column accumulators
+│   ├── readers/            # csv, json, jsonl, parquet, excel, sqlite per-format readers
+│   ├── mcp_tool.py
+│   └── requirements.txt
+├── dep_inspector/
+│   ├── cli.py
+│   ├── inspector.py        # DepInspector + dataclasses (DepReport, EcosystemReport, ...)
+│   ├── renderer.py         # markdown/json/text renderers
+│   ├── network.py          # PyPI/npm latest + OSV batch audit, ThreadPoolExecutor fan-out
+│   ├── parsers/            # pypi.py (requirements.txt/pyproject.toml/poetry.lock/uv.lock/Pipfile.lock)
+│   │                       # npm.py (package.json/package-lock.json/pnpm-lock.yaml)
+│   ├── mcp_tool.py
+│   └── requirements.txt
+├── notebook_extractor/
+│   ├── cli.py
+│   ├── extractor.py        # NotebookExtractor + dataclasses (NotebookResult, NotebookCell, CellOutput)
+│   ├── renderer.py         # markdown (light annotation), json, text
+│   ├── dedup.py            # CR-strip + consecutive-line suppression for stream outputs
+│   ├── mcp_tool.py
+│   └── requirements.txt
 └── tests/
     ├── conftest.py
     ├── fixtures/           # HTML, log, and PDF test fixtures
@@ -107,7 +137,10 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
     ├── test_summarizer.py  # log_summarizer tests
     ├── test_indexer.py     # codebase_indexer tests
     ├── test_tree.py        # smart_file_tree tests
-    └── test_context.py     # git_context tests
+    ├── test_context.py     # git_context tests
+    ├── test_data_summarizer.py
+    ├── test_dep_inspector.py
+    └── test_notebook_extractor.py
 ```
 
 ### Key Invariants
@@ -140,37 +173,52 @@ Each tool provides `mcp_tool.py`. Register tools in `.claude/mcp.json` (already 
     {
       "name": "extract_pdf_text",
       "command": ["python", "-m", "pdf_extractor.mcp_tool"],
-      "cwd": "~/dev/cli_tools/pdf_extractor"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "fetch_url",
       "command": ["python", "-m", "url_fetcher.mcp_tool"],
-      "cwd": "~/dev/cli_tools/url_fetcher"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "summarize_log",
       "command": ["python", "-m", "log_summarizer.mcp_tool"],
-      "cwd": "~/dev/cli_tools/log_summarizer"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "index_codebase",
       "command": ["python", "-m", "codebase_indexer.mcp_tool"],
-      "cwd": "~/dev/cli_tools/codebase_indexer"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "smart_file_tree",
       "command": ["python", "-m", "smart_file_tree.mcp_tool"],
-      "cwd": "~/dev/cli_tools/smart_file_tree"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "git_file_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "~/dev/cli_tools/git_context"
+      "cwd": "~/dev/cli_tools"
     },
     {
       "name": "git_repo_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "~/dev/cli_tools/git_context"
+      "cwd": "~/dev/cli_tools"
+    },
+    {
+      "name": "summarize_data",
+      "command": ["python", "-m", "data_summarizer.mcp_tool"],
+      "cwd": "~/dev/cli_tools"
+    },
+    {
+      "name": "inspect_dependencies",
+      "command": ["python", "-m", "dep_inspector.mcp_tool"],
+      "cwd": "~/dev/cli_tools"
+    },
+    {
+      "name": "extract_notebook",
+      "command": ["python", "-m", "notebook_extractor.mcp_tool"],
+      "cwd": "~/dev/cli_tools"
     }
   ]
 }

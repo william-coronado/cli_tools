@@ -1,6 +1,6 @@
 # Claude Code Token-Saving Tools
 
-A suite of six Python CLI tools that pre-process common inputs before handing them
+A suite of nine Python CLI tools that pre-process common inputs before handing them
 to Claude Code — cutting token consumption by 10–100× on typical tasks.
 
 Each tool is independently installable, exposes a consistent CLI interface, and
@@ -19,6 +19,9 @@ a bash step.
 | [`url_fetcher`](#url-fetcher) | Reading raw HTML with nav/footer/script noise | 800 KB → 5 KB per page |
 | [`log_summarizer`](#log-summarizer) | Reading large log files line by line | 10 MB → ~30 lines of signal |
 | [`git_context`](#git-context) | 5–8 sequential `git` commands per file | Multi-command → single call |
+| [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | 100 MB → schema + sample + stats |
+| [`dep_inspector`](#dep_inspector) | Reading raw lockfiles (500 KB+ package-lock.json) | Declared/resolved/transitive + outdated/audit |
+| [`notebook_extractor`](#notebook_extractor) | Reading raw .ipynb with base64/stream noise | Clean cells + stubbed images + deduped streams |
 
 ---
 
@@ -37,6 +40,8 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 ├── url_fetcher/
 ├── log_summarizer/
 ├── git_context/
+├── data_summarizer/
+├── dep_inspector/
 └── tests/
     └── fixtures/           # HTML, log, and PDF test fixtures
 ```
@@ -72,6 +77,9 @@ pip install -r smart_file_tree/requirements.txt
 pip install -r url_fetcher/requirements.txt
 pip install -r log_summarizer/requirements.txt
 pip install -r git_context/requirements.txt
+pip install -r data_summarizer/requirements.txt
+pip install -r dep_inspector/requirements.txt
+pip install -r notebook_extractor/requirements.txt
 ```
 
 ### 3. System dependencies
@@ -84,6 +92,9 @@ Some tools require system packages beyond pip:
 | `pdf_extractor` | Poppler (pdf2image) | `brew install poppler` / `apt install poppler-utils` |
 | `url_fetcher` | Playwright + Chromium *(optional, JS pages only)* | `pip install playwright && playwright install chromium` |
 | `git_context` | Git ≥ 2.11 | Pre-installed on most systems |
+| `data_summarizer` | pandas / pyarrow / openpyxl *(optional)* | `pip install pandas pyarrow openpyxl` |
+| `dep_inspector` | pyyaml *(optional, pnpm-lock.yaml only)* | `pip install pyyaml` |
+| `notebook_extractor` | *(none — stdlib + pathspec only)* | — |
 
 ### 4. Verify installation
 
@@ -94,6 +105,9 @@ python -m smart_file_tree.cli --help
 python -m url_fetcher.cli --help
 python -m log_summarizer.cli --help
 python -m git_context.cli --help
+python -m data_summarizer.cli --help
+python -m dep_inspector.cli --help
+python -m notebook_extractor.cli --help
 ```
 
 ---
@@ -110,37 +124,52 @@ with the absolute path to your project root.
     {
       "name": "extract_pdf_text",
       "command": ["python", "-m", "pdf_extractor.mcp_tool"],
-      "cwd": "/absolute/path/to/project/pdf_extractor"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "index_codebase",
       "command": ["python", "-m", "codebase_indexer.mcp_tool"],
-      "cwd": "/absolute/path/to/project/codebase_indexer"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "smart_file_tree",
       "command": ["python", "-m", "smart_file_tree.mcp_tool"],
-      "cwd": "/absolute/path/to/project/smart_file_tree"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "fetch_url",
       "command": ["python", "-m", "url_fetcher.mcp_tool"],
-      "cwd": "/absolute/path/to/project/url_fetcher"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "summarize_log",
       "command": ["python", "-m", "log_summarizer.mcp_tool"],
-      "cwd": "/absolute/path/to/project/log_summarizer"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "git_file_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "/absolute/path/to/project/git_context"
+      "cwd": "/absolute/path/to/project"
     },
     {
       "name": "git_repo_context",
       "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "/absolute/path/to/project/git_context"
+      "cwd": "/absolute/path/to/project"
+    },
+    {
+      "name": "summarize_data",
+      "command": ["python", "-m", "data_summarizer.mcp_tool"],
+      "cwd": "/absolute/path/to/project"
+    },
+    {
+      "name": "inspect_dependencies",
+      "command": ["python", "-m", "dep_inspector.mcp_tool"],
+      "cwd": "/absolute/path/to/project"
+    },
+    {
+      "name": "extract_notebook",
+      "command": ["python", "-m", "notebook_extractor.mcp_tool"],
+      "cwd": "/absolute/path/to/project"
     }
   ]
 }
@@ -406,6 +435,149 @@ git_file_context(file_path="src/models/classifier.py", base="main", no_blame=tru
 git_repo_context()
 git_repo_context(commits=20)
 ```
+
+---
+
+### `data_summarizer`
+
+Summarizes tabular and structured data files — CSV, TSV, JSON, JSONL, Parquet,
+Excel, SQLite — returning schema, sample rows, and per-column statistics
+instead of the full file. Stdlib paths cover CSV/JSON/JSONL/SQLite without any
+optional installs; richer stats and Parquet/Excel support need
+`pip install pandas pyarrow openpyxl`.
+
+**Common usage:**
+```bash
+# Single file
+python -m data_summarizer.cli sales.csv
+
+# Restrict to a few columns
+python -m data_summarizer.cli sales.csv --columns order_id,amount_usd,region
+
+# SQLite multi-table
+python -m data_summarizer.cli analytics.sqlite
+python -m data_summarizer.cli analytics.sqlite --table users --table orders
+
+# JSON: array-of-records is summarized like a table;
+#       a nested object falls back to a top-level structural summary
+python -m data_summarizer.cli config.json
+python -m data_summarizer.cli api_response.json
+
+# Directory mode (respects .gitignore + node_modules etc.)
+python -m data_summarizer.cli ./data --recursive
+
+# Cap rows scanned (big files) — stats become sampled, file still summarized
+python -m data_summarizer.cli huge.csv --max-rows 50000
+
+# Skip statistics (faster; schema + sample still produced)
+python -m data_summarizer.cli sales.csv --no-stats
+
+# JSON output for downstream tools
+python -m data_summarizer.cli sales.csv --format json
+```
+
+**MCP usage:**
+```
+summarize_data(path="sales.csv")
+summarize_data(path="analytics.sqlite", table="orders")
+summarize_data(path="huge.csv", max_rows=50000, no_stats=true)
+```
+
+**Exit codes:** `0` success · `1` input/parse error · `3` wrong content type
+(no reader matches) · `4` missing optional dep (e.g. Parquet without pyarrow).
+
+---
+
+### `dep_inspector`
+
+Inspects Python and JavaScript dependency manifests and lockfiles, returning
+declared dependencies, resolved versions, a top-transitive summary, and
+optional outdated/vulnerability checks — without dumping the raw lockfile
+(which is routinely 500 KB+).
+
+Supports: `requirements.txt`, `pyproject.toml` (PEP 621 + Poetry),
+`poetry.lock`, `uv.lock`, `Pipfile.lock` (Python); `package.json`,
+`package-lock.json` v2/v3, `pnpm-lock.yaml` (npm). `yarn.lock` falls back to
+declared-only with a warning.
+
+Network features (`--outdated`, `--audit`) are opt-in and fail open: network
+failures produce a warning on stderr and exit 0.
+
+**Common usage:**
+```bash
+# Inspect a Python project
+python -m dep_inspector.cli path/to/project
+
+# Inspect a JS project, show latest versions from npm registry
+python -m dep_inspector.cli path/to/project --outdated
+
+# Vulnerability audit via OSV
+python -m dep_inspector.cli path/to/project --audit
+
+# Only show critical/high advisories
+python -m dep_inspector.cli path/to/project --audit --severity critical,high
+
+# Show full transitive list instead of top-K summary
+python -m dep_inspector.cli path/to/project --all
+
+# Exclude devDependencies
+python -m dep_inspector.cli path/to/project --no-dev
+
+# Both outdated + audit, JSON output
+python -m dep_inspector.cli path/to/project --outdated --audit --format json
+```
+
+**MCP usage:**
+```
+inspect_dependencies(path=".")
+inspect_dependencies(path=".", outdated=true)
+inspect_dependencies(path=".", audit=true, severity=["critical", "high"])
+inspect_dependencies(path=".", direct_only=true, no_dev=true)
+```
+
+**Exit codes:** `0` success (including degraded-network) · `1` input/parse
+error · `3` no supported manifest found · `4` missing optional dep.
+
+---
+
+### `notebook_extractor`
+
+Extracts code and markdown from Jupyter `.ipynb` notebooks, stripping
+base64 images (→ `<image: png 800×600, 42 KB>` stubs), truncating long
+outputs, and deduplicating repetitive progress-bar streams. No optional
+dependencies — only stdlib and pathspec.
+
+**Common usage:**
+```bash
+# Whole notebook
+python -m notebook_extractor.cli analysis.ipynb
+
+# First 20 cells only
+python -m notebook_extractor.cli analysis.ipynb --cells 0:20
+
+# Code cells only, no outputs
+python -m notebook_extractor.cli analysis.ipynb --code-only --no-outputs
+
+# Cells tagged "training" only, keep 10 output lines max
+python -m notebook_extractor.cli analysis.ipynb --tag training --max-output-lines 10
+
+# Directory of notebooks (respects .gitignore)
+python -m notebook_extractor.cli notebooks/ --recursive
+
+# JSON output for structured processing
+python -m notebook_extractor.cli analysis.ipynb --format json
+```
+
+**MCP usage:**
+```
+extract_notebook(path="analysis.ipynb")
+extract_notebook(path="analysis.ipynb", cells="0:20", max_output_lines=10)
+extract_notebook(path="analysis.ipynb", code_only=true, no_outputs=true)
+extract_notebook(path="analysis.ipynb", tags=["training", "viz"])
+```
+
+**Exit codes:** `0` success · `1` file not found or not a notebook ·
+`3` no `.ipynb` files found in directory.
 
 ---
 
