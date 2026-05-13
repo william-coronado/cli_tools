@@ -115,22 +115,13 @@ def _apply_file_window(path: Path, tail: int | None, head: int | None):
 
 
 def _windowed_file(path: Path, tail: int | None, head: int | None):
-    """Generator that opens the file in a with-block, applies windowing, then closes."""
-    import itertools
+    """Generator that opens the file in a with-block and delegates windowing to _apply_window."""
     with open(path, "rb") as f:
-        if tail is not None:
-            buf: deque = deque(maxlen=tail)
-            for line in f:
-                buf.append(line)
-            yield from buf
-        elif head is not None:
-            yield from itertools.islice(f, head)
-        else:
-            yield from f
+        yield from _apply_window(f, tail, head)
 
 
 def _apply_window(source, tail: int | None, head: int | None):
-    """Wrap a non-file source (stdin) with tail/head windowing (stdin-safe)."""
+    """Apply tail/head windowing to any line iterable (file or stdin)."""
     import itertools
     if tail is not None:
         buf: deque = deque(maxlen=tail)

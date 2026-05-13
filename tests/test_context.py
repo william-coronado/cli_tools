@@ -560,7 +560,9 @@ class TestSkipFlags:
         extractor, dummy = self._extractor_with_file(tmp_path)
         ctx = extractor.get_file_context(dummy)
         assert ctx.blame_summary is not None
-        assert ctx.diff_vs_base != [] or True  # diff may be empty; just check it ran
+        # diff runner was invoked — verify it was called with "diff" args
+        diff_calls = [c for c in extractor._runner.run.call_args_list if "diff" in c.args]
+        assert diff_calls, "expected _runner.run to be called with 'diff'"
         assert ctx.recent_commits
 
     def test_cli_no_blame_flag(self, tmp_path):
