@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>API Reference — MyLib Docs</title>
+</head>
+<body>
+  <nav class="sidebar">
+    <ul>
+      <li><a href="/docs/intro">Introduction</a></li>
+      <li><a href="/docs/api">API Reference</a></li>
+      <li><a href="/docs/guide">Guide</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>API Reference</h1>
+    <p>This page documents all public functions in the <code>mylib</code> package.</p>
+    <h2>mylib.fetch(url, timeout=10)</h2>
+    <p>Fetch a resource from the given URL. Returns the response body as bytes.</p>
+    <h3>Parameters</h3>
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>url</td><td>str</td><td>The URL to fetch.</td></tr>
+        <tr><td>timeout</td><td>float</td><td>Request timeout in seconds.</td></tr>
+      </tbody>
+    </table>
+    <h3>Example</h3>
+    <pre><code>import mylib
+data = mylib.fetch("https://example.com/data.json")
+print(data)
+    </code></pre>
+    <h2>mylib.parse(data)</h2>
+    <p>Parse raw bytes into a structured dictionary. Supports JSON and XML formats.</p>
+    <p>Raises <code>ValueError</code> if the input cannot be parsed.</p>
+  </main>
+  <footer>
+    <p>MyLib Documentation &mdash; MIT License</p>
+  </footer>
+</body>
+</html>

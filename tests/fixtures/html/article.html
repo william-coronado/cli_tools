@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>How to Build a Great CLI Tool</title>
+  <meta name="description" content="A guide to building robust command-line tools.">
+  <meta name="author" content="Jane Smith">
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  </nav>
+  <header>
+    <h1>My Blog</h1>
+  </header>
+  <main>
+    <article>
+      <h1>How to Build a Great CLI Tool</h1>
+      <p class="byline">By Jane Smith &mdash; March 15, 2025</p>
+      <p>A good CLI tool does one thing well. It accepts structured input, produces
+      structured output, and fails loudly with meaningful error messages.</p>
+      <p>The Unix philosophy has stood the test of time for a reason: composability.
+      When each tool does one thing and communicates via stdin/stdout, you get
+      powerful pipelines for free.</p>
+      <h2>Design Principles</h2>
+      <p>Start with the interface. Write the --help text before writing a single line
+      of implementation code. This forces you to think about what the tool actually
+      does from the user's perspective.</p>
+      <p>Exit codes matter. Zero means success. Non-zero means failure. Use specific
+      codes for specific failure modes so callers can branch on them.</p>
+      <h2>Error Handling</h2>
+      <p>Print errors to stderr, never stdout. This keeps your output pipeable even
+      when things go wrong. Use a consistent prefix like "error:" so users can grep
+      for failures in batch output.</p>
+      <p>For recoverable warnings, use a "warning:" prefix and continue. Let users
+      decide whether warnings are acceptable for their use case.</p>
+    </article>
+  </main>
+  <aside>
+    <h3>Related Posts</h3>
+    <ul>
+      <li><a href="/post/1">Post One</a></li>
+      <li><a href="/post/2">Post Two</a></li>
+    </ul>
+  </aside>
+  <footer>
+    <p>&copy; 2025 My Blog. All rights reserved.</p>
+    <nav>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </footer>
+  <script>console.log("analytics loaded");</script>
+</body>
+</html>
