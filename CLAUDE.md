@@ -199,17 +199,19 @@ Register it via `.mcp.json` at the project root (already configured for this rep
   "mcpServers": {
     "cli-tools": {
       "command": "python3",
-      "args": ["mcp_server.py"]
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/mcp_server.py"]
     }
   }
 }
 ```
 
 This is Claude Code's standard MCP schema (`mcpServers` map, JSON-RPC stdio).
-Claude Code launches project-scoped servers from the repo root, so the relative
-`mcp_server.py` resolves; the server also prepends its own directory to
-`sys.path`, so the tool packages import regardless of launch directory. Install
-the server dependency with `pip install -r requirements-mcp.txt` (or `setup.sh`).
+`${CLAUDE_PROJECT_DIR}` is injected by Claude Code and points at the repo root,
+so the server resolves no matter which subdirectory Claude Code was launched
+from (the `:-.` fallback keeps it working when you run the server by hand from
+the root). The server additionally prepends its own directory to `sys.path`, so
+the tool packages import regardless of the working directory. Install the server
+dependency with `pip install -r requirements-mcp.txt` (or `setup.sh`).
 
 Verify in Claude Code with `/mcp` — the `cli-tools` server should list 12 tool
 functions (`extract_pdf_text`, `index_codebase`, `smart_file_tree`, `fetch_url`,

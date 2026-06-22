@@ -139,7 +139,7 @@ pip install -r requirements-mcp.txt   # installs `mcp` (FastMCP); also run by se
   "mcpServers": {
     "cli-tools": {
       "command": "python3",
-      "args": ["mcp_server.py"]
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/mcp_server.py"]
     }
   }
 }
@@ -147,10 +147,11 @@ pip install -r requirements-mcp.txt   # installs `mcp` (FastMCP); also run by se
 
 This is Claude Code's standard MCP configuration (`mcpServers` map + JSON-RPC over
 stdio) and lives at `.mcp.json` in the project root — **not** `.claude/mcp.json`.
-Claude Code launches project-scoped servers from the repo root, so the relative
-`mcp_server.py` resolves; the server also adds its own directory to `sys.path`, so
-the tool packages import no matter where it is launched from. If you register the
-server globally instead, use an absolute path in `args`.
+`${CLAUDE_PROJECT_DIR}` is injected by Claude Code and resolves to the repo root,
+so the server starts correctly even when Claude Code is launched from a
+subdirectory (the `:-.` fallback covers running it by hand from the root). The
+server also adds its own directory to `sys.path`, so the tool packages import no
+matter what the working directory is.
 
 The server is a thin, typed layer: each tool function delegates to the existing
 per-tool handler in `<tool>/mcp_tool.py`, so there is exactly one place that maps
