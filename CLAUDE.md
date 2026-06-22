@@ -29,7 +29,7 @@ source .venv/bin/activate
 bash setup.sh          # installs all pip deps, checks system deps, smoke-tests imports
 ```
 
-`setup.sh` handles pip installs for all six tools, checks Git/Tesseract/Poppler,
+`setup.sh` handles pip installs for all eleven tools (plus the MCP server dep), checks Git/Tesseract/Poppler,
 warns about optional deps (Playwright, easyocr), and exits non-zero on any failure.
 To install a single tool's deps manually: `pip install -r <tool_name>/requirements.txt`.
 
@@ -187,76 +187,46 @@ Both `codebase_indexer` and `smart_file_tree` also respect `.treeignore` / `.ind
 
 ### MCP Registration
 
-Each tool provides `mcp_tool.py`. Register tools in `.claude/mcp.json` (already configured for this repo):
+A single FastMCP server, `mcp_server.py` at the project root, exposes **all** tools
+to MCP clients (Claude Code, etc.) as one stdio server named `cli-tools`. It is a
+thin typed layer: each `@mcp.tool()` function delegates to the matching per-tool
+handler in `<tool>/mcp_tool.py`, so param-mapping logic stays in one tested place.
+
+Register it via `.mcp.json` at the project root (already configured for this repo):
 
 ```json
 {
-  "tools": [
-    {
-      "name": "extract_pdf_text",
-      "command": ["python", "-m", "pdf_extractor.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "fetch_url",
-      "command": ["python", "-m", "url_fetcher.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "summarize_log",
-      "command": ["python", "-m", "log_summarizer.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "index_codebase",
-      "command": ["python", "-m", "codebase_indexer.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "smart_file_tree",
-      "command": ["python", "-m", "smart_file_tree.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "git_file_context",
-      "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "git_repo_context",
-      "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "summarize_data",
-      "command": ["python", "-m", "data_summarizer.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "inspect_dependencies",
-      "command": ["python", "-m", "dep_inspector.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "extract_notebook",
-      "command": ["python", "-m", "notebook_extractor.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "extract_api_spec",
-      "command": ["python", "-m", "api_spec_extractor.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
-    },
-    {
-      "name": "inspect_http",
-      "command": ["python", "-m", "http_inspector.mcp_tool"],
-      "cwd": "~/dev/cli_tools"
+  "mcpServers": {
+    "cli-tools": {
+      "command": "python3",
+      "args": ["mcp_server.py"]
     }
-  ]
+  }
 }
 ```
 
-Update the `cwd` paths if your project root differs from `~/dev/cli_tools/`.
+This is Claude Code's standard MCP schema (`mcpServers` map, JSON-RPC stdio).
+Claude Code launches project-scoped servers from the repo root, so the relative
+`mcp_server.py` resolves; the server also prepends its own directory to
+`sys.path`, so the tool packages import regardless of launch directory. Install
+the server dependency with `pip install -r requirements-mcp.txt` (or `setup.sh`).
+
+Verify in Claude Code with `/mcp` — the `cli-tools` server should list all 12
+tools (`extract_pdf_text`, `index_codebase`, `smart_file_tree`, `fetch_url`,
+`summarize_log`, `git_file_context`, `git_repo_context`, `summarize_data`,
+`inspect_dependencies`, `extract_notebook`, `extract_api_spec`, `inspect_http`).
+
+The per-tool `<tool>/mcp_tool.py` modules remain as the underlying handlers
+(and are exercised directly by the test suite); `mcp_server.py` is the single
+front door that wraps them.
+
+Several tools overlap native Claude Code capabilities that have grown over time —
+the Read tool reads PDFs and `.ipynb` notebooks natively, and WebFetch fetches
+URLs as markdown. Prefer the native path for simple cases; reach for these tools
+when the native one falls short: `extract_pdf_text` for scanned/OCR or very large
+PDFs, `extract_notebook` for huge notebooks (image-stubbing, stream dedup),
+`fetch_url` for JS-rendered pages (Playwright) or cached fetches, and
+`inspect_http` for JSON body-shape inference.
 
 ## Testing
 
@@ -275,6 +245,8 @@ Test dependencies beyond the tool requirements: `fpdf2` (PDF fixtures), `respx` 
 3. Add `requirements.txt`
 4. If the tool walks directories, import from `shared/walker.py`
 5. If the tool accepts time windows, import `parse_duration` from `shared/duration.py`
-6. Add `mcp_tool.py` and register in `.claude/mcp.json`
+6. Add `mcp_tool.py` with the tool's handler, then add a typed `@mcp.tool()`
+   wrapper in `mcp_server.py` that delegates to it (no `.mcp.json` change needed —
+   the single `cli-tools` server picks it up automatically)
 7. Add tests in `tests/test_<tool_name>.py`
 8. Add entries to README.md under Tool Reference and Recommended Workflows

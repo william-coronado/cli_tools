@@ -64,6 +64,16 @@ for tool in "${TOOLS[@]}"; do
     fi
 done
 
+# MCP front door (mcp_server.py) — only needed if you register the suite with
+# an MCP client such as Claude Code. Harmless to install regardless.
+echo -n "  mcp_server (mcp) ... "
+if python3 -m pip install --quiet -r requirements-mcp.txt; then
+    echo -e "${GREEN}ok${RESET}"
+else
+    echo -e "${RED}failed${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
 # ── System dependencies ────────────────────────────────────────────────────────
 echo -e "\n${BOLD}System dependencies${RESET}"
 

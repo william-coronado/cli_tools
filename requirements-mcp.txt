@@ -1,0 +1,3 @@
+# Dependency for the unified MCP server (mcp_server.py).
+# The individual CLI tools do not need this; only the MCP front door does.
+mcp>=1.2.0
