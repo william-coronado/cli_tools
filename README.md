@@ -126,84 +126,52 @@ python -m http_inspector.cli --help
 
 ## MCP Registration
 
-To make all tools available as first-class Claude Code tools (no bash required),
-add the following to your project's `.claude/mcp.json`. Replace the `cwd` paths
-with the absolute path to your project root.
+All tools are exposed through a **single** FastMCP server — `mcp_server.py` at the
+project root — registered as one stdio MCP server named `cli-tools`. Install its
+dependency and add the project-root `.mcp.json` (already present in this repo):
+
+```bash
+pip install -r requirements-mcp.txt   # installs `mcp` (FastMCP); also run by setup.sh
+```
 
 ```json
 {
-  "tools": [
-    {
-      "name": "extract_pdf_text",
-      "command": ["python", "-m", "pdf_extractor.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "index_codebase",
-      "command": ["python", "-m", "codebase_indexer.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "smart_file_tree",
-      "command": ["python", "-m", "smart_file_tree.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "fetch_url",
-      "command": ["python", "-m", "url_fetcher.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "summarize_log",
-      "command": ["python", "-m", "log_summarizer.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "git_file_context",
-      "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "git_repo_context",
-      "command": ["python", "-m", "git_context.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "summarize_data",
-      "command": ["python", "-m", "data_summarizer.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "inspect_dependencies",
-      "command": ["python", "-m", "dep_inspector.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "extract_notebook",
-      "command": ["python", "-m", "notebook_extractor.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "extract_api_spec",
-      "command": ["python", "-m", "api_spec_extractor.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
-    },
-    {
-      "name": "inspect_http",
-      "command": ["python", "-m", "http_inspector.mcp_tool"],
-      "cwd": "/absolute/path/to/project"
+  "mcpServers": {
+    "cli-tools": {
+      "command": "python3",
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/mcp_server.py"]
     }
-  ]
+  }
 }
 ```
+
+This is Claude Code's standard MCP configuration (`mcpServers` map + JSON-RPC over
+stdio) and lives at `.mcp.json` in the project root — **not** `.claude/mcp.json`.
+`${CLAUDE_PROJECT_DIR}` is injected by Claude Code and resolves to the repo root,
+so the server starts correctly even when Claude Code is launched from a
+subdirectory (the `:-.` fallback covers running it by hand from the root). The
+server also adds its own directory to `sys.path`, so the tool packages import no
+matter what the working directory is.
+
+The server is a thin, typed layer: each tool function delegates to the existing
+per-tool handler in `<tool>/mcp_tool.py`, so there is exactly one place that maps
+parameters to work.
 
 **Verify MCP tools are registered:**
 
 ```bash
 # In Claude Code, run:
 /mcp
-# All tool names should appear in the list
+# The `cli-tools` server should appear with 12 tool functions.
+# (12, not 11: git_context exposes two — git_file_context and git_repo_context.)
 ```
+
+> **Note on native overlap.** Claude Code's built-in tools now cover some of this
+> ground: the Read tool reads PDFs and `.ipynb` notebooks directly, and WebFetch
+> returns URLs as markdown. Prefer the native path for simple cases and reach for
+> these tools when it falls short — `extract_pdf_text` for scanned/OCR or very
+> large PDFs, `extract_notebook` for huge notebooks, `fetch_url` for JS-rendered
+> or cached pages, and `inspect_http` for JSON body-shape inference.
 
 ---
 
@@ -889,7 +857,9 @@ generation), `respx` (httpx mocking for `url_fetcher` — no real network calls 
 3. Add `requirements.txt`
 4. If the tool walks directories: import from `shared/walker.py`
 5. If the tool accepts time windows: import `parse_duration` from `shared/duration.py`
-6. Add `mcp_tool.py` and register in `.claude/mcp.json`
+6. Add `mcp_tool.py` with the handler, then add a typed `@mcp.tool()` wrapper in
+   `mcp_server.py` that delegates to it (the single `cli-tools` server picks it up;
+   no `.mcp.json` change needed)
 7. Add tests in `tests/test_<tool_name>.py`
 8. Add an entry to this README under [Tool Reference](#tool-reference) and
    [Recommended Workflows](#recommended-workflows)
