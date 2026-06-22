@@ -211,10 +211,12 @@ Claude Code launches project-scoped servers from the repo root, so the relative
 `sys.path`, so the tool packages import regardless of launch directory. Install
 the server dependency with `pip install -r requirements-mcp.txt` (or `setup.sh`).
 
-Verify in Claude Code with `/mcp` — the `cli-tools` server should list all 12
-tools (`extract_pdf_text`, `index_codebase`, `smart_file_tree`, `fetch_url`,
+Verify in Claude Code with `/mcp` — the `cli-tools` server should list 12 tool
+functions (`extract_pdf_text`, `index_codebase`, `smart_file_tree`, `fetch_url`,
 `summarize_log`, `git_file_context`, `git_repo_context`, `summarize_data`,
 `inspect_dependencies`, `extract_notebook`, `extract_api_spec`, `inspect_http`).
+That is 12, not 11, because the `git_context` tool exposes two MCP functions
+(`git_file_context` and `git_repo_context`); the other ten tools expose one each.
 
 The per-tool `<tool>/mcp_tool.py` modules remain as the underlying handlers
 (and are exercised directly by the test suite); `mcp_server.py` is the single

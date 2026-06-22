@@ -161,7 +161,8 @@ parameters to work.
 ```bash
 # In Claude Code, run:
 /mcp
-# The `cli-tools` server should appear with all 12 tools.
+# The `cli-tools` server should appear with 12 tool functions.
+# (12, not 11: git_context exposes two — git_file_context and git_repo_context.)
 ```
 
 > **Note on native overlap.** Claude Code's built-in tools now cover some of this
