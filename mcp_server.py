@@ -22,6 +22,7 @@ import sys
 from typing import Literal, Optional
 
 # Make the tool packages importable regardless of the launch directory.
+# ⚠️  Do NOT name tool packages after stdlib modules (e.g., json, pathlib, etc.)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
