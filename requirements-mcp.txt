@@ -1,3 +1,5 @@
 # Dependency for the unified MCP server (mcp_server.py).
 # The individual CLI tools do not need this; only the MCP front door does.
-mcp>=1.2.0
+# Floor closes CVE-2025-66416 (DNS-rebinding gap on HTTP/SSE transports), fixed in 1.23.0.
+# Low risk here since this server runs stdio-only, but cheap to stay patched.
+mcp>=1.23.0

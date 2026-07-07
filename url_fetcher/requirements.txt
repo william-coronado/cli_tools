@@ -3,6 +3,7 @@ trafilatura>=1.9.0
 readability-lxml>=0.8.4.1
 beautifulsoup4>=4.12.0
 lxml>=6.1.1
-markdownify>=0.13.0
+# Floor closes CVE-2025-46656 (DoS), fixed in 0.14.1.
+markdownify>=0.14.1
 charset-normalizer>=3.3.0
 rich>=13.0.0

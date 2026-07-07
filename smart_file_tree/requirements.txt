@@ -1,3 +1,4 @@
 pathspec>=0.12.0
-pygments>=2.17.0
+# Floor closes CVE-2026-4539 (ReDoS), fixed in 2.20.0.
+pygments>=2.20.0
 rich>=13.0.0
