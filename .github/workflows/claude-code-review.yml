@@ -32,6 +32,16 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Authenticate git for plugin marketplace clone
+        # `claude plugin marketplace add` shells out to a plain anonymous
+        # `git clone`. GitHub Actions runners are frequently rate-limited on
+        # anonymous HTTPS clones of github.com, which makes git try to prompt
+        # for a password and fail with "unable to get password from user"
+        # instead of falling back. Routing all github.com clones through an
+        # authenticated URL avoids the prompt. See anthropics/claude-code-action#850.
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
