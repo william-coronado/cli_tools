@@ -1,4 +1,8 @@
 pdfplumber>=0.10.0
+# pdfminer.six is a transitive dep of pdfplumber, but pdfplumber's own floor (0.10.0)
+# does not guarantee a patched version. Pinned directly to close CVE-2025-64512
+# (insecure pickle deserialization -> RCE via a crafted PDF), fixed in 20251107.
+# Do not remove even though it's not imported directly by this package.
 pdfminer.six>=20251107
 pytesseract>=0.3.10
 Pillow>=12.2.0
