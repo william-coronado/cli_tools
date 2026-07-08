@@ -180,6 +180,27 @@ class TestCLIExitCodes:
         r = self._run(str(p))
         assert r.returncode == 3
 
+    def test_four_on_missing_markitdown(self, tiny_docx, tmp_path):
+        # The CLI runs in a subprocess, so monkeypatching __import__ here
+        # would not reach it. Instead, shadow markitdown with a stub that
+        # raises ImportError on import, via PYTHONPATH (which precedes
+        # site-packages on sys.path).
+        import os
+        stub_dir = tmp_path / "stub"
+        stub_dir.mkdir()
+        (stub_dir / "markitdown.py").write_text(
+            'raise ImportError("markitdown not installed (simulated)")\n'
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(stub_dir) + os.pathsep + env.get("PYTHONPATH", "")
+        r = subprocess.run(
+            [sys.executable, "-m", "doc_extractor.cli", str(tiny_docx)],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 4
+        assert "markitdown" in r.stderr
+        assert "pip install" in r.stderr
+
     def test_json_output_parses(self, tiny_docx):
         pytest.importorskip("markitdown")
         r = self._run(str(tiny_docx), "--format", "json")

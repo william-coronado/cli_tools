@@ -169,7 +169,7 @@ if python3 -c "import markitdown" &>/dev/null 2>&1; then
     ok "markitdown  (doc_extractor DOCX/PPTX/XLSX/EPUB/MSG; http_inspector HTML bodies)"
 else
     warn "markitdown not installed — doc_extractor will exit 4; http_inspector shows raw HTML previews."
-    warn "  pip install 'markitdown[docx,pptx,xlsx]'"
+    warn "  pip install 'markitdown[docx,pptx,xlsx,outlook]'"
 fi
 
 # ── Smoke test: import each tool ───────────────────────────────────────────────

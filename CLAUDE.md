@@ -44,7 +44,7 @@ System dependencies:
 - `api_spec_extractor`: pyyaml is optional (.yaml/.yml specs); graphql-core is optional (.graphql/.gql) — `pip install pyyaml graphql-core`
 - `http_inspector`: httpx required — `pip install httpx`; markitdown is optional (HTML body → markdown)
 - `notebook_extractor`: markdownify is optional (HTML-only cell outputs → markdown tables)
-- `doc_extractor`: markitdown required for conversion (exits 4 without it) — `pip install 'markitdown[docx,pptx,xlsx]'`
+- `doc_extractor`: markitdown required for conversion (exits 4 without it) — `pip install 'markitdown[docx,pptx,xlsx,outlook]'`
 
 Verify:
 ```bash

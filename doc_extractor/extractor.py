@@ -37,10 +37,7 @@ _SIBLING_TOOLS: dict[str, str] = {
     ".html": "url_fetcher (content extraction) or http_inspector",
 }
 
-_INSTALL_HINT = (
-    "Install with: pip install 'markitdown[docx,pptx,xlsx]' "
-    "(add the 'outlook' extra for .msg files)"
-)
+_INSTALL_HINT = "Install with: pip install 'markitdown[docx,pptx,xlsx,outlook]'"
 
 
 @dataclass

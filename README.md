@@ -115,7 +115,7 @@ Some tools require system packages beyond pip:
 | `http_inspector` | httpx *(required)* | `pip install httpx` |
 | `http_inspector` | markitdown *(optional, HTML body → markdown)* | `pip install markitdown` |
 | `notebook_extractor` | markdownify *(optional, HTML outputs → markdown)* | `pip install markdownify` |
-| `doc_extractor` | markitdown *(required for conversion; exits 4 without it)* | `pip install 'markitdown[docx,pptx,xlsx]'` |
+| `doc_extractor` | markitdown *(required for conversion; exits 4 without it)* | `pip install 'markitdown[docx,pptx,xlsx,outlook]'` |
 
 ### 4. Verify installation
 
