@@ -193,7 +193,10 @@ def _print_single_file(path: Path, args: argparse.Namespace) -> None:
     from .annotator import FileAnnotator
     from .tree import TreeNode
 
-    ann_obj = FileAnnotator()
+    ann_obj = FileAnnotator(
+        large_file_threshold=args.large_threshold,
+        recent_window_seconds=args.recent_window,
+    )
     node = TreeNode(
         name=path.name,
         path=path,

@@ -25,13 +25,15 @@ class HeaderInfo:
 @dataclass
 class BodySummary:
     content_type: str
-    detected_format: str          # json | xml | text | binary
+    detected_format: str          # json | xml | html | text | binary
     size_bytes: int
     # JSON
     json_shape: str | None = None
     json_sample: list | None = None
     json_array_len: int | None = None
-    # Text / XML
+    # HTML
+    html_title: str | None = None
+    # Text / XML / HTML (markdown-converted)
     text_preview: str | None = None
     total_lines: int | None = None
     suppressed_lines: int = 0
@@ -198,6 +200,10 @@ class HttpInspector:
         if "json" in content_type or _looks_like_json(text):
             return self._process_json(text, content_type, size_bytes, opts, warnings)
 
+        # HTML — must come before XML: HTML also starts with "<"
+        if content_type in ("text/html", "application/xhtml+xml") or _looks_like_html(text):
+            return self._process_html(text, content_type, size_bytes, opts, warnings)
+
         # XML
         if "xml" in content_type or _looks_like_xml(text):
             return self._process_xml(text, content_type, size_bytes, opts)
@@ -257,6 +263,36 @@ class HttpInspector:
             text_preview=preview,
         )
 
+    def _process_html(
+        self, text: str, content_type: str, size_bytes: int,
+        opts: InspectorOptions, warnings: list[str],
+    ) -> BodySummary:
+        title = _html_title(text)
+        markdown = _html_to_markdown(text)
+        if markdown is None:
+            # markitdown unavailable (or conversion failed): fall back to a
+            # raw truncated preview, like any other text body.
+            warnings.append(
+                "markitdown not available — showing raw HTML preview "
+                "(pip install markitdown for a markdown summary)"
+            )
+            body = self._process_text(text, content_type, size_bytes, opts)
+            body.detected_format = "html"
+            body.html_title = title
+            return body
+
+        preview, total_lines, suppressed = _truncate(markdown, opts.max_body_lines)
+        return BodySummary(
+            content_type=content_type,
+            detected_format="html",
+            size_bytes=size_bytes,
+            html_title=title,
+            text_preview=preview,
+            total_lines=total_lines,
+            suppressed_lines=suppressed,
+            truncated=suppressed > 0,
+        )
+
     def _process_text(
         self, text: str, content_type: str, size_bytes: int, opts: InspectorOptions
     ) -> BodySummary:
@@ -309,6 +345,39 @@ def _looks_like_json(text: str) -> bool:
 def _looks_like_xml(text: str) -> bool:
     t = text.lstrip()
     return t.startswith("<")
+
+
+def _looks_like_html(text: str) -> bool:
+    t = text.lstrip()[:256].lower()
+    return t.startswith("<!doctype html") or t.startswith("<html") or "<html" in t
+
+
+def _html_title(text: str) -> str | None:
+    import html as html_mod
+    import re
+    m = re.search(r"<title[^>]*>(.*?)</title>", text, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return None
+    title = html_mod.unescape(m.group(1)).strip()
+    return title[:200] or None
+
+
+def _html_to_markdown(text: str) -> str | None:
+    """Convert HTML to markdown via markitdown. None → caller falls back to
+    a raw text preview (markitdown is optional)."""
+    try:
+        from markitdown import MarkItDown, StreamInfo
+    except ImportError:
+        return None
+    import io
+    try:
+        result = MarkItDown(enable_plugins=False).convert_stream(
+            io.BytesIO(text.encode("utf-8")),
+            stream_info=StreamInfo(extension=".html", mimetype="text/html"),
+        )
+        return (result.text_content or "").strip() or None
+    except Exception:
+        return None
 
 
 def _truncate(text: str, max_lines: int) -> tuple[str, int, int]:

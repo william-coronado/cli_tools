@@ -48,7 +48,7 @@ fi
 
 # ── pip install ────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}Installing Python dependencies${RESET}"
-TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor api_spec_extractor http_inspector)
+TOOLS=(pdf_extractor codebase_indexer smart_file_tree url_fetcher log_summarizer git_context data_summarizer dep_inspector notebook_extractor api_spec_extractor http_inspector doc_extractor)
 for tool in "${TOOLS[@]}"; do
     req="$tool/requirements.txt"
     if [ ! -f "$req" ]; then
@@ -161,6 +161,15 @@ if python3 -c "import graphql" &>/dev/null 2>&1; then
 else
     warn "graphql-core not installed (optional) — api_spec_extractor can't parse .graphql files."
     warn "  pip install graphql-core"
+fi
+
+# markitdown (doc_extractor; optionally enriches http_inspector HTML bodies
+# and notebook_extractor HTML outputs via its markdownify dependency)
+if python3 -c "import markitdown" &>/dev/null 2>&1; then
+    ok "markitdown  (doc_extractor DOCX/PPTX/XLSX/EPUB/MSG; http_inspector HTML bodies)"
+else
+    warn "markitdown not installed — doc_extractor will exit 4; http_inspector shows raw HTML previews."
+    warn "  pip install 'markitdown[docx,pptx,xlsx]'"
 fi
 
 # ── Smoke test: import each tool ───────────────────────────────────────────────

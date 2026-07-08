@@ -182,12 +182,14 @@ class CSVReader(Reader):
         import pandas as pd  # noqa: WPS433
 
         # Read one extra row to detect truncation
+        # Only empty cells are null — matches the stdlib backend, which never
+        # coerces strings like "NA"/"null" to missing values.
         df = pd.read_csv(
             path,
             sep=self.delimiter,
             nrows=opts.max_rows + 1,
             na_values=[""],
-            keep_default_na=True,
+            keep_default_na=False,
         )
         truncated = len(df) > opts.max_rows
         if truncated:

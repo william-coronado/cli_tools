@@ -1,2 +1,6 @@
-pyyaml>=6.0
-graphql-core>=3.2
+# No required third-party deps — JSON OpenAPI specs parse with the stdlib.
+
+# Optional (additional spec formats; the tool exits 4 with install
+# instructions when one is needed but missing):
+#   pip install pyyaml           — .yaml/.yml OpenAPI specs
+#   pip install graphql-core     — .graphql/.gql GraphQL SDL specs

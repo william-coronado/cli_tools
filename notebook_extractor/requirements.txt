@@ -1,2 +1,6 @@
 # Core (always required)
 pathspec>=0.11.0
+
+# Optional:
+#   pip install markdownify   — converts HTML-only cell outputs (e.g. styled
+#                               tables) to markdown instead of an "<HTML output>" stub

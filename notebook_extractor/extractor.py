@@ -171,12 +171,24 @@ class NotebookExtractor:
                         raw_b64 = "".join(raw_b64)
                     stub = _image_stub(mime, raw_b64)
                     return CellOutput(output_type=out_type, text=None, image_stub=stub)
-            # HTML (DataFrames, etc.) — strip to plain text fallback
+            # HTML-only outputs (no text/plain fallback, e.g. styled tables):
+            # convert to markdown when a converter is available, else stub.
             if "text/html" in data and "text/plain" not in data:
+                html = _join_source(data.get("text/html", []))
+                converted = _html_to_markdown(html)
+                if converted is None:
+                    return CellOutput(
+                        output_type=out_type,
+                        text="<HTML output>",
+                        image_stub=None,
+                    )
+                lines = converted.splitlines()
+                truncated = len(lines) > opts.max_output_lines
                 return CellOutput(
                     output_type=out_type,
-                    text="<HTML output>",
+                    text="\n".join(lines[:opts.max_output_lines]),
                     image_stub=None,
+                    truncated=truncated,
                 )
             # Plain text
             plain = data.get("text/plain", [])
@@ -215,6 +227,26 @@ def _join_source(src) -> str:
     if isinstance(src, list):
         return "".join(src)
     return str(src) if src else ""
+
+
+def _html_to_markdown(html: str) -> str | None:
+    """Convert an HTML-only cell output to markdown.
+
+    Returns None when no converter is installed (markdownify is optional) or
+    conversion fails — callers fall back to the "<HTML output>" stub.
+    """
+    try:
+        from markdownify import markdownify
+    except ImportError:
+        return None
+    try:
+        md = markdownify(html, heading_style="ATX", bullets="-")
+    except Exception:
+        return None
+    import re
+    md = "\n".join(line.rstrip() for line in md.splitlines())
+    md = re.sub(r"\n{3,}", "\n\n", md).strip()
+    return md or None
 
 
 def _image_stub(mime: str, b64: str) -> str:

@@ -21,13 +21,19 @@ class Renderer:
         ]
 
         if r.errors:
-            lines += ["---", "", f"## Errors ({len(r.errors)})", ""]
+            total_err = len(r.errors) + r.overflow_errors
+            header = f"## Errors ({len(r.errors)} of {total_err})" if r.overflow_errors else f"## Errors ({len(r.errors)})"
+            lines += ["---", "", header, ""]
             for e in r.errors:
                 lines.append(f"**Line {e.line_number:,}** — `{e.message}`")
+            if r.overflow_errors:
+                lines.append(f"*…{r.overflow_errors:,} more errors not shown (raise --max-errors to see them)*")
             lines.append("")
 
         if r.warnings:
-            lines += ["---", "", f"## Warnings ({len(r.warnings)})", ""]
+            total_warn = len(r.warnings) + r.overflow_warnings
+            header = f"## Warnings ({len(r.warnings)} of {total_warn})" if r.overflow_warnings else f"## Warnings ({len(r.warnings)})"
+            lines += ["---", "", header, ""]
             for w in r.warnings:
                 # Check for dedup annotation
                 dedup_note = ""
@@ -36,6 +42,8 @@ class Renderer:
                         dedup_note = f" *(x{g.count}, lines {g.first_line:,}–{g.last_line:,})*"
                         break
                 lines.append(f"**Line {w.line_number:,}** — `{w.message}`{dedup_note}")
+            if r.overflow_warnings:
+                lines.append(f"*…{r.overflow_warnings:,} more warnings not shown (raise --max-warnings to see them)*")
             lines.append("")
 
         if r.tracebacks:
@@ -82,9 +90,11 @@ class Renderer:
             f"Suppressed (repetitive): {r.suppressed_line_count:,}  |  "
             f"Shown: {shown_count:,}"
         )
+        err_total = f"{len(r.errors) + r.overflow_errors}" if r.overflow_errors else f"{len(r.errors)}"
+        warn_total = f"{len(r.warnings) + r.overflow_warnings}" if r.overflow_warnings else f"{len(r.warnings)}"
         lines.append(
-            f"- Errors: {len(r.errors)}  |  "
-            f"Warnings: {len(r.warnings)}  |  "
+            f"- Errors: {err_total}  |  "
+            f"Warnings: {warn_total}  |  "
             f"Tracebacks: {len(r.tracebacks)}"
         )
         if r.dedup_groups:
@@ -135,6 +145,8 @@ class Renderer:
             "metrics": [_me(m) for m in r.metrics],
             "key_events": [_ll(e) for e in r.key_events],
             "suppressed_line_count": r.suppressed_line_count,
+            "overflow_errors": r.overflow_errors,
+            "overflow_warnings": r.overflow_warnings,
             "dedup_groups": len(r.dedup_groups),
         }
 
@@ -143,9 +155,13 @@ class Renderer:
         if r.errors:
             parts.append(f"\nERRORS ({len(r.errors)}):")
             parts.extend(f"  [{e.line_number}] {e.message}" for e in r.errors)
+            if r.overflow_errors:
+                parts.append(f"  ... {r.overflow_errors} more errors not shown")
         if r.warnings:
             parts.append(f"\nWARNINGS ({len(r.warnings)}):")
             parts.extend(f"  [{w.line_number}] {w.message}" for w in r.warnings)
+            if r.overflow_warnings:
+                parts.append(f"  ... {r.overflow_warnings} more warnings not shown")
         if r.tracebacks:
             parts.append(f"\nTRACEBACKS ({len(r.tracebacks)}):")
             for tb in r.tracebacks:

@@ -1,37 +1,5 @@
+"""MCP handler for http_inspector. Exposed via the unified server (mcp_server.py)."""
 from __future__ import annotations
-
-import json
-import sys
-
-
-TOOL_DEFINITIONS = [
-    {
-        "name": "inspect_http",
-        "description": (
-            "Make an HTTP request and return a token-efficient summary: status code, "
-            "selected response headers, and a shape + sample of the response body. "
-            "JSON responses show a schema + N sample records. Text is truncated. "
-            "Use instead of curl when you care about structure, not raw bytes."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "url":              {"type": "string"},
-                "method":           {"type": "string", "description": "HTTP method (default GET)"},
-                "headers":          {"type": "array", "items": {"type": "string"},
-                                     "description": 'Headers as ["Name: Value", ...]'},
-                "data":             {"type": "string", "description": "Request body string"},
-                "content_type":     {"type": "string"},
-                "max_array_items":  {"type": "integer"},
-                "shape_only":       {"type": "boolean"},
-                "no_redact_cookies":{"type": "boolean"},
-                "show_all_headers": {"type": "boolean"},
-                "timeout":          {"type": "number"},
-            },
-            "required": ["url"],
-        },
-    }
-]
 
 
 def _handle(params: dict) -> str:
@@ -64,27 +32,3 @@ def _handle(params: dict) -> str:
     )
     result = HttpInspector(opts).inspect(params["url"])
     return result.to_markdown()
-
-
-def main() -> None:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-            name = request.get("name")
-            params = request.get("parameters", {})
-            if name == "inspect_http":
-                result = _handle(params)
-            else:
-                print(json.dumps({"error": f"Unknown tool: {name}"}), flush=True)
-                continue
-            response = {"result": result}
-        except Exception as e:
-            response = {"error": str(e)}
-        print(json.dumps(response), flush=True)
-
-
-if __name__ == "__main__":
-    main()

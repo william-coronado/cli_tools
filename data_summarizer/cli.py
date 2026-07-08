@@ -21,7 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "statistics. Use instead of reading raw data files."
         ),
     )
-    p.add_argument("path", help="File path, directory, or '-' for stdin")
+    p.add_argument("path", help="File path or directory")
     p.add_argument(
         "--format-hint",
         dest="format_hint",
@@ -49,6 +49,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-rows", type=int, default=100_000, dest="max_rows")
     p.add_argument("--max-columns", type=int, default=50, dest="max_columns")
     p.add_argument("--max-cell-width", type=int, default=80, dest="max_cell_width")
+    p.add_argument(
+        "--max-json-mb",
+        type=int,
+        default=50,
+        dest="max_json_mb",
+        help="Refuse to load whole-document JSON files larger than this (MB).",
+    )
 
     # SQLite / Excel
     p.add_argument(
@@ -94,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         max_columns=args.max_columns,
         max_cell_width=args.max_cell_width,
         max_tables=args.max_tables,
+        max_json_bytes=args.max_json_mb * 1_000_000,
         all_tables=args.all_tables,
         columns=_parse_columns(args.columns),
         tables=args.table,
@@ -103,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     summarizer = DataSummarizer(opts)
 
     if args.path == "-":
-        print("error: stdin input is not yet supported; provide a file path.", file=sys.stderr)
+        print("error: stdin input is not supported; provide a file path.", file=sys.stderr)
         return 1
 
     target = Path(args.path)

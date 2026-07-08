@@ -209,7 +209,7 @@ class SpecExtractor:
         if is_url:
             from .fetcher import fetch_spec
             content, content_type = fetch_spec(source, timeout=self.options.url_timeout)
-            fmt = detect_format(source, content)
+            fmt = detect_format(source, content, content_type=content_type)
             return content, fmt
 
         path = Path(source)

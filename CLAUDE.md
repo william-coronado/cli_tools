@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A suite of eleven Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
+A suite of twelve Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
 
 | Tool | Purpose |
 |---|---|
@@ -18,7 +18,8 @@ A suite of eleven Python CLI tools that pre-process inputs before passing them t
 | `dep_inspector` | Inspects Python/JS manifests + lockfiles: declared/resolved/transitive + outdated/audit |
 | `notebook_extractor` | Extracts code/markdown from .ipynb; stubs images, truncates outputs, dedupes streams |
 | `api_spec_extractor` | Extracts endpoint catalog or detail from OpenAPI 2/3 and GraphQL SDL specs |
-| `http_inspector` | Makes an HTTP request and returns status + headers + body shape/sample |
+| `http_inspector` | Makes an HTTP request and returns status + headers + body shape/sample; HTML bodies → markdown excerpt (optional markitdown) |
+| `doc_extractor` | Converts DOCX/PPTX/XLSX/EPUB/MSG to markdown via markitdown |
 
 ## Setup
 
@@ -29,8 +30,8 @@ source .venv/bin/activate
 bash setup.sh          # installs all pip deps, checks system deps, smoke-tests imports
 ```
 
-`setup.sh` handles pip installs for all eleven tools (plus the MCP server dep), checks Git/Tesseract/Poppler,
-warns about optional deps (Playwright, easyocr), and exits non-zero on any failure.
+`setup.sh` handles pip installs for all twelve tools (plus the MCP server dep), checks Git/Tesseract/Poppler,
+warns about optional deps (Playwright, easyocr, markitdown), and exits non-zero on any failure.
 To install a single tool's deps manually: `pip install -r <tool_name>/requirements.txt`.
 
 System dependencies:
@@ -41,7 +42,9 @@ System dependencies:
 - `dep_inspector`: pyyaml is optional (pnpm-lock.yaml only) — `pip install pyyaml`
 - `notebook_extractor`: no system deps; pathspec only (already installed)
 - `api_spec_extractor`: pyyaml is optional (.yaml/.yml specs); graphql-core is optional (.graphql/.gql) — `pip install pyyaml graphql-core`
-- `http_inspector`: httpx required — `pip install httpx`
+- `http_inspector`: httpx required — `pip install httpx`; markitdown is optional (HTML body → markdown)
+- `notebook_extractor`: markdownify is optional (HTML-only cell outputs → markdown tables)
+- `doc_extractor`: markitdown required for conversion (exits 4 without it) — `pip install 'markitdown[docx,pptx,xlsx]'`
 
 Verify:
 ```bash
@@ -63,7 +66,8 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 ├── shared/
 │   ├── __init__.py
 │   ├── walker.py           # Shared exclusion + .gitignore logic
-│   └── duration.py         # Duration string parsing shared by all tools
+│   ├── duration.py         # Duration string parsing shared by all tools
+│   └── languages.py        # Extension → language map (indexer + file tree fallback)
 ├── pdf_extractor/
 │   ├── cli.py
 │   ├── extractor.py        # Core: text layer detection, pdfplumber, OCR routing
@@ -149,6 +153,12 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 │   ├── body/               # json_shape.py (schema inference + sample), xml_shape.py, text.py
 │   ├── mcp_tool.py
 │   └── requirements.txt
+├── doc_extractor/
+│   ├── cli.py
+│   ├── extractor.py        # DocExtractor + DocResult; markitdown routing per extension
+│   ├── renderer.py         # markdown/json/text
+│   ├── mcp_tool.py
+│   └── requirements.txt
 └── tests/
     ├── conftest.py
     ├── fixtures/           # HTML, log, and PDF test fixtures
@@ -162,7 +172,8 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
     ├── test_dep_inspector.py
     ├── test_notebook_extractor.py
     ├── test_api_spec_extractor.py
-    └── test_http_inspector.py
+    ├── test_http_inspector.py
+    └── test_doc_extractor.py
 ```
 
 ### Key Invariants
@@ -198,7 +209,7 @@ Register it via `.mcp.json` at the project root (already configured for this rep
 {
   "mcpServers": {
     "cli-tools": {
-      "command": "python3",
+      "command": "${CLAUDE_PROJECT_DIR:-.}/.venv/bin/python3",
       "args": ["${CLAUDE_PROJECT_DIR:-.}/mcp_server.py"]
     }
   }
@@ -209,20 +220,28 @@ This is Claude Code's standard MCP schema (`mcpServers` map, JSON-RPC stdio).
 `${CLAUDE_PROJECT_DIR}` is injected by Claude Code and points at the repo root,
 so the server resolves no matter which subdirectory Claude Code was launched
 from (the `:-.` fallback keeps it working when you run the server by hand from
-the root). The server additionally prepends its own directory to `sys.path`, so
-the tool packages import regardless of the working directory. Install the server
-dependency with `pip install -r requirements-mcp.txt` (or `setup.sh`).
+the root). The command uses the project venv's interpreter so the `mcp`
+dependency resolves without activating the venv. The server additionally
+prepends its own directory to `sys.path`, so the tool packages import
+regardless of the working directory. Install the server dependency with
+`pip install -r requirements-mcp.txt` (or `setup.sh`).
 
-Verify in Claude Code with `/mcp` — the `cli-tools` server should list 12 tool
+Verify in Claude Code with `/mcp` — the `cli-tools` server should list 13 tool
 functions (`extract_pdf_text`, `index_codebase`, `smart_file_tree`, `fetch_url`,
 `summarize_log`, `git_file_context`, `git_repo_context`, `summarize_data`,
-`inspect_dependencies`, `extract_notebook`, `extract_api_spec`, `inspect_http`).
-That is 12, not 11, because the `git_context` tool exposes two MCP functions
-(`git_file_context` and `git_repo_context`); the other ten tools expose one each.
+`inspect_dependencies`, `extract_notebook`, `extract_document`,
+`extract_api_spec`, `inspect_http`).
+That is 13, not 12, because the `git_context` tool exposes two MCP functions
+(`git_file_context` and `git_repo_context`); the other eleven tools expose one each.
 
-The per-tool `<tool>/mcp_tool.py` modules remain as the underlying handlers
-(and are exercised directly by the test suite); `mcp_server.py` is the single
-front door that wraps them.
+The per-tool `<tool>/mcp_tool.py` modules contain only the `_handle()` handlers
+(exercised directly by the test suite); `mcp_server.py` is the single front
+door that wraps them. The server also declares MCP metadata consumed by current
+Claude Code versions: server `instructions` (drives tool discovery under
+deferred tool loading), per-tool `title` + `ToolAnnotations`
+(readOnlyHint/openWorldHint), and `_meta["anthropic/maxResultSizeChars"]` on
+tools with legitimately large outputs (extract_pdf_text, fetch_url,
+summarize_log, extract_notebook, extract_document).
 
 Several tools overlap native Claude Code capabilities that have grown over time —
 the Read tool reads PDFs and `.ipynb` notebooks natively, and WebFetch fetches
@@ -231,6 +250,11 @@ when the native one falls short: `extract_pdf_text` for scanned/OCR or very larg
 PDFs, `extract_notebook` for huge notebooks (image-stubbing, stream dedup),
 `fetch_url` for JS-rendered pages (Playwright) or cached fetches, and
 `inspect_http` for JSON body-shape inference.
+
+markitdown powers `doc_extractor` and (optionally) http_inspector's HTML body
+summaries, but deliberately does not replace `url_fetcher` (its HTML converter
+is markdownify-based, without the trafilatura → readability boilerplate
+removal) or `pdf_extractor` (its PDF converter is text-layer only, no OCR).
 
 ## Testing
 

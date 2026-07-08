@@ -708,6 +708,68 @@ class TestExitCodes:
             json.loads(r.stdout)
 
 
+# ── HTML bodies ───────────────────────────────────────────────────────────────
+
+_HTML_PAGE = (
+    "<!DOCTYPE html><html><head><title>Docs Portal</title></head>"
+    "<body><h1>Welcome</h1><p>Read the <a href='/guide'>guide</a>.</p>"
+    "<script>tracker()</script></body></html>"
+)
+
+
+class TestHTMLBody:
+    @respx.mock
+    def test_html_converted_to_markdown(self):
+        pytest.importorskip("markitdown")
+        respx.get(f"{BASE}/page").mock(return_value=httpx.Response(
+            200, text=_HTML_PAGE, headers={"content-type": "text/html; charset=utf-8"}
+        ))
+        r = _inspect(f"{BASE}/page")
+        assert r.body.detected_format == "html"
+        assert r.body.html_title == "Docs Portal"
+        assert "Welcome" in r.body.text_preview
+        assert "tracker()" not in r.body.text_preview  # scripts stripped
+        assert "Docs Portal" in r.to_markdown()
+
+    @respx.mock
+    def test_html_sniffed_without_content_type(self):
+        pytest.importorskip("markitdown")
+        respx.get(f"{BASE}/page").mock(return_value=httpx.Response(
+            200, text=_HTML_PAGE, headers={"content-type": "text/plain"}
+        ))
+        r = _inspect(f"{BASE}/page")
+        assert r.body.detected_format == "html"
+
+    @respx.mock
+    def test_html_fallback_without_markitdown(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.split(".")[0] == "markitdown":
+                raise ImportError("markitdown not installed (simulated)")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        respx.get(f"{BASE}/page").mock(return_value=httpx.Response(
+            200, text=_HTML_PAGE, headers={"content-type": "text/html"}
+        ))
+        r = _inspect(f"{BASE}/page")
+        assert r.body.detected_format == "html"
+        assert r.body.html_title == "Docs Portal"
+        assert "<h1>" in r.body.text_preview  # raw preview fallback
+        assert any("markitdown" in w for w in r.warnings)
+
+    @respx.mock
+    def test_xml_still_detected_as_xml(self):
+        respx.get(f"{BASE}/feed").mock(return_value=httpx.Response(
+            200, text='<?xml version="1.0"?><feed><entry>x</entry></feed>',
+            headers={"content-type": "application/xml"},
+        ))
+        r = _inspect(f"{BASE}/feed")
+        assert r.body.detected_format == "xml"
+
+
 # ── MCP wrapper ───────────────────────────────────────────────────────────────
 
 class TestMCPWrapper:
@@ -735,11 +797,3 @@ class TestMCPWrapper:
             "data": '{"name": "Alice"}',
         })
         assert "201" in result
-
-    def test_unknown_tool_returns_error(self):
-        r = subprocess.run(
-            [sys.executable, "-m", "http_inspector.mcp_tool"],
-            input='{"name":"nope","parameters":{}}\n', capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "error" in d

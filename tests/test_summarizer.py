@@ -318,6 +318,34 @@ class TestRepetitiveLog:
         assert r.suppressed_line_count == 0
 
 
+# ── Cap overflow reporting ────────────────────────────────────────────────────
+
+class TestOverflowCounts:
+    def _make_source(self, tmp_path: Path) -> Path:
+        p = tmp_path / "many_errors.log"
+        with open(p, "w") as f:
+            for i in range(30):
+                f.write(f"2025-05-12 10:00:00,000 - app - ERROR - failure kind {i}\n")
+        return p
+
+    def test_error_overflow_counted(self, tmp_path):
+        r = LogSummarizer(max_errors=10, use_dedup=False).summarize(self._make_source(tmp_path))
+        assert len(r.errors) == 10
+        assert r.overflow_errors == 20
+
+    def test_error_overflow_rendered(self, tmp_path):
+        r = LogSummarizer(max_errors=10, use_dedup=False).summarize(self._make_source(tmp_path))
+        md = r.to_markdown()
+        assert "10 of 30" in md
+        assert "20" in md and "more errors not shown" in md
+        assert r.to_json()["overflow_errors"] == 20
+
+    def test_no_overflow_no_note(self, tmp_path):
+        r = LogSummarizer(use_dedup=False).summarize(self._make_source(tmp_path))
+        assert r.overflow_errors == 0
+        assert "more errors not shown" not in r.to_markdown()
+
+
 # ── CLI flags ─────────────────────────────────────────────────────────────────
 
 class TestCLI:

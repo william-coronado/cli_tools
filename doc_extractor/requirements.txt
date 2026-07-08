@@ -1,0 +1,4 @@
+# Optional (the tool exits 4 with install instructions when missing):
+#   pip install 'markitdown[docx,pptx,xlsx]'   — core + office formats
+#   pip install 'markitdown[outlook]'          — .msg (Outlook message) support
+markitdown[docx,pptx,xlsx]>=0.1.6

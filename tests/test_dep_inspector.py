@@ -323,23 +323,9 @@ class TestCLIExitCodes:
 
 class TestMCPWrapper:
     def test_inspect_dependencies_returns_result(self, pypi_project):
-        req = json.dumps({"name": "inspect_dependencies", "parameters": {"path": str(pypi_project)}})
-        r = subprocess.run(
-            [sys.executable, "-m", "dep_inspector.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        assert r.returncode == 0
-        d = json.loads(r.stdout.strip())
-        assert "result" in d
-        assert "# Dependency Report:" in d["result"]
-
-    def test_unknown_tool_returns_error(self):
-        r = subprocess.run(
-            [sys.executable, "-m", "dep_inspector.mcp_tool"],
-            input='{"name":"nope","parameters":{}}\n', capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "error" in d
+        from dep_inspector.mcp_tool import _handle
+        result = _handle({"path": str(pypi_project)})
+        assert "# Dependency Report:" in result
 
 
 # ── Optional dep handling ───────────────────────────────────────────────────

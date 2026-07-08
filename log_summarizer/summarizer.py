@@ -61,6 +61,9 @@ class SummaryResult:
     dedup_groups: list[DedupGroup]
     key_events: list[LogLine]
     suppressed_line_count: int
+    # Matches dropped because --max-errors/--max-warnings was reached
+    overflow_errors: int = 0
+    overflow_warnings: int = 0
 
     def to_markdown(self) -> str:
         from .renderer import Renderer
@@ -144,6 +147,8 @@ class LogSummarizer:
         metrics: list[MetricEntry] = []
         key_events: list[LogLine] = []
         suppressed = 0
+        overflow_errors = 0
+        overflow_warnings = 0
         total_lines = 0
 
         # Metric timeline for training logs
@@ -168,10 +173,16 @@ class LogSummarizer:
                 parsed = result
 
             cat = parsed.category
-            if cat == "error" and len(errors) < self.max_errors:
-                errors.append(parsed)
-            elif cat == "warning" and not self.errors_only and len(warnings) < self.max_warnings:
-                warnings.append(parsed)
+            if cat == "error":
+                if len(errors) < self.max_errors:
+                    errors.append(parsed)
+                else:
+                    overflow_errors += 1
+            elif cat == "warning" and not self.errors_only:
+                if len(warnings) < self.max_warnings:
+                    warnings.append(parsed)
+                else:
+                    overflow_warnings += 1
             elif cat == "metric" and not self.errors_only:
                 # Collect from training detector
                 from .detectors.training_detector import TrainingDetector
@@ -217,6 +228,8 @@ class LogSummarizer:
             dedup_groups=dedup_groups,
             key_events=key_events,
             suppressed_line_count=suppressed,
+            overflow_errors=overflow_errors,
+            overflow_warnings=overflow_warnings,
         )
 
     def summarize_directory(
