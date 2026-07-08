@@ -26,14 +26,40 @@ from typing import Literal, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
-mcp = FastMCP("cli-tools")
+mcp = FastMCP(
+    "cli-tools",
+    instructions=(
+        "Token-efficient pre-processors for local files and web resources. "
+        "Prefer these over reading raw sources when the input is large or "
+        "noisy: PDFs (including scanned/OCR), Jupyter notebooks, log files, "
+        "tabular data (CSV/JSON/JSONL/Parquet/Excel/SQLite), dependency "
+        "manifests and lockfiles, OpenAPI/GraphQL specs, office documents "
+        "(DOCX/PPTX/XLSX/EPUB), git history, repository structure, "
+        "JS-rendered web pages, and HTTP APIs. Each tool returns a compact "
+        "markdown summary — typically 10-100x fewer tokens than the raw "
+        "source."
+    ),
+)
+
+# All tools are inspection-only. The network-facing ones (fetch_url,
+# extract_api_spec URL mode, dep_inspector's registry/OSV checks) reach the
+# open web; inspect_http can send non-GET requests, so it is not marked
+# read-only.
+_LOCAL_RO = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+_NETWORK_RO = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+
+# Some tools legitimately return large payloads (full PDF text, whole
+# notebooks, fetched pages). Claude Code reads this _meta key to raise the
+# per-tool output cap.
+_LARGE_OUTPUT = {"anthropic/maxResultSizeChars": 200_000}
 
 
 # --------------------------------------------------------------------------- #
 # pdf_extractor
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="PDF Text Extractor", annotations=_LOCAL_RO, meta=_LARGE_OUTPUT)
 def extract_pdf_text(
     pdf_path: str,
     pages: Optional[str] = None,
@@ -50,7 +76,7 @@ def extract_pdf_text(
 # --------------------------------------------------------------------------- #
 # codebase_indexer
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Codebase Indexer", annotations=_LOCAL_RO)
 def index_codebase(
     repo_path: str = ".",
     detail: Literal["low", "normal", "high"] = "normal",
@@ -75,7 +101,7 @@ def index_codebase(
 # --------------------------------------------------------------------------- #
 # smart_file_tree
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Smart File Tree", annotations=_LOCAL_RO)
 def smart_file_tree(
     path: Optional[str] = None,
     depth: Optional[int] = None,
@@ -104,7 +130,7 @@ def smart_file_tree(
 # --------------------------------------------------------------------------- #
 # url_fetcher
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="URL Fetcher", annotations=_NETWORK_RO, meta=_LARGE_OUTPUT)
 def fetch_url(
     url: str,
     use_js: bool = False,
@@ -126,7 +152,7 @@ def fetch_url(
 # --------------------------------------------------------------------------- #
 # log_summarizer
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Log Summarizer", annotations=_LOCAL_RO, meta=_LARGE_OUTPUT)
 def summarize_log(
     path: str,
     format_hint: Optional[
@@ -151,7 +177,7 @@ def summarize_log(
 # --------------------------------------------------------------------------- #
 # git_context
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Git File Context", annotations=_LOCAL_RO)
 def git_file_context(
     file_path: str,
     base: Optional[str] = None,
@@ -170,7 +196,7 @@ def git_file_context(
     })
 
 
-@mcp.tool()
+@mcp.tool(title="Git Repo Context", annotations=_LOCAL_RO)
 def git_repo_context(
     repo_path: str = ".",
     commits: int = 10,
@@ -184,7 +210,7 @@ def git_repo_context(
 # --------------------------------------------------------------------------- #
 # data_summarizer
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Data Summarizer", annotations=_LOCAL_RO)
 def summarize_data(
     path: str,
     format_hint: Optional[
@@ -215,7 +241,7 @@ def summarize_data(
 # --------------------------------------------------------------------------- #
 # dep_inspector
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Dependency Inspector", annotations=_NETWORK_RO)
 def inspect_dependencies(
     path: str,
     ecosystem: Optional[Literal["pypi", "npm"]] = None,
@@ -244,7 +270,7 @@ def inspect_dependencies(
 # --------------------------------------------------------------------------- #
 # notebook_extractor
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="Notebook Extractor", annotations=_LOCAL_RO, meta=_LARGE_OUTPUT)
 def extract_notebook(
     path: str,
     cells: Optional[str] = None,
@@ -271,9 +297,25 @@ def extract_notebook(
 
 
 # --------------------------------------------------------------------------- #
+# doc_extractor
+# --------------------------------------------------------------------------- #
+@mcp.tool(title="Document Extractor", annotations=_LOCAL_RO, meta=_LARGE_OUTPUT)
+def extract_document(
+    path: str,
+    max_chars: int = 200_000,
+) -> str:
+    """Extract markdown from an office/document file: DOCX, PPTX, XLSX
+    (document view), EPUB, or MSG. Use instead of reading these binary
+    formats directly. For PDFs use extract_pdf_text, for .ipynb use
+    extract_notebook, for data files use summarize_data."""
+    from doc_extractor.mcp_tool import _handle
+    return _handle({"path": path, "max_chars": max_chars})
+
+
+# --------------------------------------------------------------------------- #
 # api_spec_extractor
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(title="API Spec Extractor", annotations=_NETWORK_RO)
 def extract_api_spec(
     source: str,
     endpoint: Optional[str] = None,
@@ -300,7 +342,12 @@ def extract_api_spec(
 # --------------------------------------------------------------------------- #
 # http_inspector
 # --------------------------------------------------------------------------- #
-@mcp.tool()
+@mcp.tool(
+    title="HTTP Inspector",
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, openWorldHint=True
+    ),
+)
 def inspect_http(
     url: str,
     method: Optional[str] = None,

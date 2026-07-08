@@ -250,7 +250,17 @@ class TestRenderers:
 # ── Optional-dep fallback ─────────────────────────────────────────────────────
 
 class TestOptionalDeps:
-    def test_missing_parquet_dep(self, tmp_path):
+    def test_missing_parquet_dep_when_pyarrow_absent(self, monkeypatch, tmp_path):
+        # Simulate pyarrow AND pandas missing (either can read parquet)
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.split(".")[0] in ("pyarrow", "pandas"):
+                raise ImportError(f"{name} not installed (simulated)")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
         p = tmp_path / "fake.parquet"
         p.write_bytes(b"\x00" * 16)
         with pytest.raises(MissingOptionalDep):
@@ -273,6 +283,48 @@ class TestOptionalDeps:
             _summarize(p, format_hint="xlsx")
 
 
+# ── Parquet / Excel readers (need optional deps installed) ────────────────────
+
+class TestParquetExcelReaders:
+    def test_parquet_schema_rows_and_nulls(self, tmp_path):
+        pd = pytest.importorskip("pandas")
+        pytest.importorskip("pyarrow")
+        p = tmp_path / "t.parquet"
+        pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", None]}).to_parquet(p)
+        r = _summarize(p)
+        t = r.tables[0]
+        assert t.row_count == 3
+        assert [c.name for c in t.columns] == ["a", "b"]
+        b = next(c for c in t.columns if c.name == "b")
+        assert b.null_count == 1
+
+    def test_excel_schema_and_rows(self, tmp_path):
+        pd = pytest.importorskip("pandas")
+        pytest.importorskip("openpyxl")
+        p = tmp_path / "t.xlsx"
+        pd.DataFrame({"a": [1, 2], "b": ["x", "y"]}).to_excel(p, index=False)
+        r = _summarize(p)
+        t = r.tables[0]
+        assert t.row_count == 2
+        assert {c.name for c in t.columns} == {"a", "b"}
+
+
+# ── JSON size guard ───────────────────────────────────────────────────────────
+
+class TestJSONSizeGuard:
+    def test_oversized_json_refused(self, tmp_path):
+        p = tmp_path / "big.json"
+        p.write_text('{"a": 1}')
+        with pytest.raises(ValueError, match="load limit"):
+            _summarize(p, max_json_bytes=4)
+
+    def test_json_under_limit_reads(self, tmp_path):
+        p = tmp_path / "small.json"
+        p.write_text('[{"a": 1}, {"a": 2}]')
+        r = _summarize(p)
+        assert r.tables[0].row_count == 2
+
+
 # ── CLI exit codes ────────────────────────────────────────────────────────────
 
 class TestCLIExitCodes:
@@ -292,6 +344,9 @@ class TestCLIExitCodes:
         assert r.returncode == 1
 
     def test_four_on_missing_optional_dep(self, tmp_path):
+        import importlib.util
+        if importlib.util.find_spec("pyarrow") or importlib.util.find_spec("pandas"):
+            pytest.skip("parquet support installed; missing-dep path not reachable")
         p = tmp_path / "x.parquet"
         p.write_bytes(b"\x00" * 16)
         r = self._run(str(p))
@@ -328,30 +383,11 @@ class TestDirectoryMode:
 
 class TestMCPWrapper:
     def test_summarize_data_returns_result(self, tiny_csv):
-        req = json.dumps({"name": "summarize_data", "parameters": {"path": str(tiny_csv), "sample": 3}})
-        r = subprocess.run(
-            [sys.executable, "-m", "data_summarizer.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        assert r.returncode == 0
-        d = json.loads(r.stdout.strip())
-        assert "result" in d
-        assert "# Data Summary:" in d["result"]
+        from data_summarizer.mcp_tool import _handle
+        result = _handle({"path": str(tiny_csv), "sample": 3})
+        assert "# Data Summary:" in result
 
-    def test_unknown_tool_returns_error(self):
-        req = json.dumps({"name": "nope", "parameters": {}})
-        r = subprocess.run(
-            [sys.executable, "-m", "data_summarizer.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "error" in d
-
-    def test_missing_path_returns_error(self):
-        req = json.dumps({"name": "summarize_data", "parameters": {"path": "/no/such/file.csv"}})
-        r = subprocess.run(
-            [sys.executable, "-m", "data_summarizer.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "error" in d
+    def test_missing_path_raises(self):
+        from data_summarizer.mcp_tool import _handle
+        with pytest.raises(Exception):
+            _handle({"path": "/no/such/file.csv"})

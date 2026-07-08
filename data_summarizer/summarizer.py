@@ -94,6 +94,7 @@ class SummarizerOptions:
     max_columns: int = 50
     max_cell_width: int = 80
     max_tables: int = 20
+    max_json_bytes: int = 50_000_000
     all_tables: bool = False
     columns: list[str] | None = None
     tables: list[str] | None = None

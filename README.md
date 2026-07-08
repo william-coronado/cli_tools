@@ -1,6 +1,6 @@
 # Claude Code Token-Saving Tools
 
-A suite of nine Python CLI tools that pre-process common inputs before handing them
+A suite of twelve Python CLI tools that pre-process common inputs before handing them
 to Claude Code — cutting token consumption by 10–100× on typical tasks.
 
 Each tool is independently installable, exposes a consistent CLI interface, and
@@ -19,11 +19,16 @@ a bash step.
 | [`url_fetcher`](#url-fetcher) | Reading raw HTML with nav/footer/script noise | 800 KB → 5 KB per page |
 | [`log_summarizer`](#log-summarizer) | Reading large log files line by line | 10 MB → ~30 lines of signal |
 | [`git_context`](#git-context) | 5–8 sequential `git` commands per file | Multi-command → single call |
-| [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | 100 MB → schema + sample + stats |
+| [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | Large files → schema + sample + stats¹ |
 | [`dep_inspector`](#dep_inspector) | Reading raw lockfiles (500 KB+ package-lock.json) | Declared/resolved/transitive + outdated/audit |
 | [`notebook_extractor`](#notebook_extractor) | Reading raw .ipynb with base64/stream noise | Clean cells + stubbed images + deduped streams |
 | [`api_spec_extractor`](#api_spec_extractor) | Pasting raw OpenAPI/Swagger/GraphQL specs | Endpoint catalog or per-endpoint detail (5–100× reduction) |
 | [`http_inspector`](#http_inspector) | Full API response bodies in context | Status + headers + body shape + sample (5–100× reduction) |
+| [`doc_extractor`](#doc_extractor) | Reading binary office formats (DOCX/PPTX/XLSX/EPUB/MSG) | Binary documents → clean markdown |
+
+¹ CSV (stdlib path) and JSONL stream row-by-row and handle arbitrarily large files.
+Whole-document JSON, Parquet, and Excel are parsed in memory; JSON files above a
+configurable limit (`--max-json-mb`, default 50 MB) are refused with a pointer to JSONL.
 
 ---
 
@@ -35,7 +40,8 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 <project_root>/
 ├── shared/
 │   ├── walker.py           # Shared exclusion logic (used by indexer + file tree)
-│   └── duration.py         # Duration string parsing (used by all tools)
+│   ├── duration.py         # Duration string parsing (used by all tools)
+│   └── languages.py        # Extension → language map (indexer + file tree fallback)
 ├── pdf_extractor/
 ├── codebase_indexer/
 ├── smart_file_tree/
@@ -47,6 +53,7 @@ Tools live directly at the project root — there is no `tools/` subdirectory.
 ├── notebook_extractor/
 ├── api_spec_extractor/
 ├── http_inspector/
+├── doc_extractor/
 └── tests/
     └── fixtures/           # HTML, log, and PDF test fixtures
 ```
@@ -87,6 +94,7 @@ pip install -r dep_inspector/requirements.txt
 pip install -r notebook_extractor/requirements.txt
 pip install -r api_spec_extractor/requirements.txt
 pip install -r http_inspector/requirements.txt
+pip install -r doc_extractor/requirements.txt
 ```
 
 ### 3. System dependencies
@@ -101,10 +109,13 @@ Some tools require system packages beyond pip:
 | `git_context` | Git ≥ 2.11 | Pre-installed on most systems |
 | `data_summarizer` | pandas / pyarrow / openpyxl *(optional)* | `pip install pandas pyarrow openpyxl` |
 | `dep_inspector` | pyyaml *(optional, pnpm-lock.yaml only)* | `pip install pyyaml` |
-| `notebook_extractor` | *(none — stdlib + pathspec only)* | — |
+| `notebook_extractor` | *(stdlib + pathspec; markdownify optional, see below)* | — |
 | `api_spec_extractor` | pyyaml *(optional, .yaml/.yml specs)* | `pip install pyyaml` |
 | `api_spec_extractor` | graphql-core *(optional, .graphql/.gql specs)* | `pip install graphql-core` |
 | `http_inspector` | httpx *(required)* | `pip install httpx` |
+| `http_inspector` | markitdown *(optional, HTML body → markdown)* | `pip install markitdown` |
+| `notebook_extractor` | markdownify *(optional, HTML outputs → markdown)* | `pip install markdownify` |
+| `doc_extractor` | markitdown *(required for conversion; exits 4 without it)* | `pip install 'markitdown[docx,pptx,xlsx,outlook]'` |
 
 ### 4. Verify installation
 
@@ -120,6 +131,7 @@ python -m dep_inspector.cli --help
 python -m notebook_extractor.cli --help
 python -m api_spec_extractor.cli --help
 python -m http_inspector.cli --help
+python -m doc_extractor.cli --help
 ```
 
 ---
@@ -138,7 +150,7 @@ pip install -r requirements-mcp.txt   # installs `mcp` (FastMCP); also run by se
 {
   "mcpServers": {
     "cli-tools": {
-      "command": "python3",
+      "command": "${CLAUDE_PROJECT_DIR:-.}/.venv/bin/python3",
       "args": ["${CLAUDE_PROJECT_DIR:-.}/mcp_server.py"]
     }
   }
@@ -150,20 +162,25 @@ stdio) and lives at `.mcp.json` in the project root — **not** `.claude/mcp.jso
 `${CLAUDE_PROJECT_DIR}` is injected by Claude Code and resolves to the repo root,
 so the server starts correctly even when Claude Code is launched from a
 subdirectory (the `:-.` fallback covers running it by hand from the root). The
-server also adds its own directory to `sys.path`, so the tool packages import no
-matter what the working directory is.
+command points at the project venv's interpreter so the `mcp` dependency is found
+without activating the venv first. The server also adds its own directory to
+`sys.path`, so the tool packages import no matter what the working directory is.
 
 The server is a thin, typed layer: each tool function delegates to the existing
 per-tool handler in `<tool>/mcp_tool.py`, so there is exactly one place that maps
-parameters to work.
+parameters to work. The server declares MCP metadata that current Claude Code
+versions consume: server `instructions` (used for tool discovery under deferred
+tool loading), per-tool `title` and read-only/open-world annotations, and an
+`anthropic/maxResultSizeChars` hint on the tools that legitimately return large
+payloads (PDF text, fetched pages, notebooks, log summaries).
 
 **Verify MCP tools are registered:**
 
 ```bash
 # In Claude Code, run:
 /mcp
-# The `cli-tools` server should appear with 12 tool functions.
-# (12, not 11: git_context exposes two — git_file_context and git_repo_context.)
+# The `cli-tools` server should appear with 13 tool functions.
+# (13, not 12: git_context exposes two — git_file_context and git_repo_context.)
 ```
 
 > **Note on native overlap.** Claude Code's built-in tools now cover some of this
@@ -172,6 +189,14 @@ parameters to work.
 > these tools when it falls short — `extract_pdf_text` for scanned/OCR or very
 > large PDFs, `extract_notebook` for huge notebooks, `fetch_url` for JS-rendered
 > or cached pages, and `inspect_http` for JSON body-shape inference.
+
+> **Note on markitdown.** [`markitdown`](https://github.com/microsoft/markitdown)
+> powers `doc_extractor` and (optionally) HTML body summaries in
+> `http_inspector`. It deliberately does **not** replace `url_fetcher` or
+> `pdf_extractor`: url_fetcher's trafilatura → readability → raw extraction
+> chain removes boilerplate far more aggressively than markitdown's
+> markdownify-based HTML converter, and markitdown's PDF converter reads only
+> the text layer — it has no OCR path for scanned documents.
 
 ---
 
@@ -436,6 +461,11 @@ instead of the full file. Stdlib paths cover CSV/JSON/JSONL/SQLite without any
 optional installs; richer stats and Parquet/Excel support need
 `pip install pandas pyarrow openpyxl`.
 
+Memory behavior: CSV (stdlib path) and JSONL stream row-by-row and handle
+arbitrarily large files. Whole-document JSON, Parquet, and Excel are parsed in
+memory; JSON files larger than `--max-json-mb` (default 50 MB) are refused with
+a suggestion to convert to JSONL.
+
 **Common usage:**
 ```bash
 # Single file
@@ -629,8 +659,10 @@ extract_api_spec(source="https://example.com/openapi.json", endpoint="/orders")
 
 Makes a live HTTP request and returns a token-efficient summary: status code,
 selected response headers (rate-limit, content, server), and a shape + sample
-of the body. JSON responses show a schema and N sample records. Text and XML
-are truncated/summarized. Cookie values are redacted by default.
+of the body. JSON responses show a schema and N sample records. HTML pages are
+converted to a markdown excerpt with the page title (requires the optional
+`markitdown`; falls back to a raw preview without it). Text and XML are
+truncated/summarized. Cookie values are redacted by default.
 
 Complements `url_fetcher` (which targets human-readable web pages) and
 `api_spec_extractor` (which reads spec files offline).
@@ -670,6 +702,41 @@ inspect_http(url="https://api.example.com/users", show_all_headers=true)
 
 **Exit codes:** `0` success · `1` network/request error (timeout, DNS, HTTP error) ·
 `4` missing httpx dependency.
+
+---
+
+### `doc_extractor`
+
+Converts office/document formats to clean markdown via
+[markitdown](https://github.com/microsoft/markitdown): `.docx`, `.pptx`, `.xlsx`
+(document view — use `data_summarizer` for schema/stats analysis of workbooks),
+`.epub`, and `.msg`. Formats another tool handles better are rejected with a
+pointer (PDF → `pdf_extractor`, `.ipynb` → `notebook_extractor`, data files →
+`data_summarizer`).
+
+**Common usage:**
+```bash
+# Word document → markdown
+python -m doc_extractor.cli report.docx
+
+# PowerPoint deck, truncated to 50k chars
+python -m doc_extractor.cli deck.pptx --max-chars 50000
+
+# JSON output
+python -m doc_extractor.cli book.epub --format json
+
+# Bare markdown only (no header/metadata)
+python -m doc_extractor.cli report.docx --format text
+```
+
+**MCP usage:**
+```
+extract_document(path="report.docx")
+extract_document(path="deck.pptx", max_chars=50000)
+```
+
+**Exit codes:** `0` success · `1` missing file or conversion failure ·
+`3` unsupported/wrong format · `4` markitdown not installed.
 
 ---
 
@@ -786,6 +853,20 @@ For GraphQL:
    → Type index + Query/Mutation catalog
 2. extract_api_spec(source="schema.graphql")
    → Then ask "show me the Pet type fields" with the index already in context
+```
+
+---
+
+### Working from office documents
+
+Pull requirements or reference material out of binary documents without
+pasting them raw:
+
+```
+1. extract_document(path="requirements.docx")        # spec → markdown
+2. extract_document(path="architecture-deck.pptx")   # slides → markdown outline
+3. summarize_data(path="metrics.xlsx")               # workbook as data → schema + stats
+   (extract_document(path="metrics.xlsx") instead for the document view)
 ```
 
 ---

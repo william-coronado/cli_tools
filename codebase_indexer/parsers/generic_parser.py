@@ -3,19 +3,7 @@ from pathlib import Path
 
 from .base import BaseParser
 from ..indexer import FileIndex
-
-_EXT_MAP: dict[str, str] = {
-    ".js": "javascript", ".jsx": "javascript",
-    ".ts": "typescript", ".tsx": "typescript",
-    ".go": "go", ".rs": "rust", ".java": "java",
-    ".cs": "c#", ".cpp": "c++", ".c": "c", ".h": "c",
-    ".rb": "ruby", ".php": "php", ".swift": "swift", ".kt": "kotlin",
-    ".md": "markdown", ".rst": "restructuredtext",
-    ".txt": "text", ".yaml": "yaml", ".yml": "yaml",
-    ".toml": "toml", ".json": "json",
-    ".sh": "shell", ".bash": "shell", ".zsh": "shell",
-    ".sql": "sql", ".html": "html", ".css": "css", ".scss": "scss",
-}
+from shared.languages import EXT_LANGUAGE_MAP as _EXT_MAP
 
 SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(_EXT_MAP)
 
@@ -44,8 +32,10 @@ class GenericParser(BaseParser):
         rel = str(path.relative_to(root))
         try:
             size = path.stat().st_size
-            text = path.read_text(encoding="utf-8", errors="replace")
-            line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+            line_count = 0
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                for _ in f:
+                    line_count += 1
         except OSError as exc:
             return FileIndex(
                 path=rel, language=_detect_language(path),

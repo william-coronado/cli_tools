@@ -70,6 +70,18 @@ class Renderer:
             lines.append(b.text_preview or "")
             lines.append("```")
 
+        elif b.detected_format == "html":
+            if b.html_title:
+                lines.append(f"**Title:** {b.html_title}")
+                lines.append("")
+            if b.suppressed_lines:
+                lines.append(f"_Showing first {b.total_lines - b.suppressed_lines} of {b.total_lines} lines_")
+                lines.append("")
+            if b.text_preview:
+                lines.append("```markdown")
+                lines.append(b.text_preview)
+                lines.append("```")
+
         else:  # text
             if b.suppressed_lines:
                 lines.append(f"_Showing first {b.total_lines - b.suppressed_lines} of {b.total_lines} lines_")
@@ -93,6 +105,7 @@ class Renderer:
                 "json_shape": b.json_shape,
                 "json_sample": b.json_sample,
                 "json_array_len": b.json_array_len,
+                "html_title": b.html_title,
                 "text_preview": b.text_preview,
                 "total_lines": b.total_lines,
                 "suppressed_lines": b.suppressed_lines,

@@ -702,6 +702,45 @@ class TestFormatDetection:
         with pytest.raises(WrongContentType):
             detect_format(str(p), "a,b,c\n1,2,3\n")
 
+    def test_content_type_header_fallback(self):
+        # Content that sniffing can't classify, but the server labels it
+        blob = '{"paths": {}}'
+        assert detect_format(
+            "https://x/spec", blob, content_type="application/json; charset=utf-8"
+        ) == DetectedFormat.OPENAPI_JSON
+        assert detect_format(
+            "https://x/spec", "paths: {}", content_type="application/yaml"
+        ) == DetectedFormat.OPENAPI_YAML
+
+    def test_content_type_ignored_when_sniff_succeeds(self):
+        # Sniffed GraphQL wins over a generic JSON content-type
+        assert detect_format(
+            "https://x/spec", "type Query { a: String }", content_type="application/json"
+        ) == DetectedFormat.GRAPHQL
+
+
+class TestFetchSizeCap:
+    def test_oversized_response_rejected(self, monkeypatch):
+        import io
+        import urllib.request
+        from api_spec_extractor.fetcher import fetch_spec
+
+        class FakeResponse(io.BytesIO):
+            headers = {"Content-Type": "application/json"}
+
+            def __init__(self):
+                super().__init__(b"x" * 64)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: FakeResponse())
+        with pytest.raises(ValueError, match="size limit"):
+            fetch_spec("https://x/spec", max_bytes=16)
+
 
 # ── Schema simplification ─────────────────────────────────────────────────────
 
@@ -956,42 +995,16 @@ class TestExitCodes:
 
 class TestMCPWrapper:
     def test_extract_api_spec_returns_result(self, petstore_file):
-        req = json.dumps({"name": "extract_api_spec", "parameters": {"source": petstore_file}})
-        r = subprocess.run(
-            [sys.executable, "-m", "api_spec_extractor.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        assert r.returncode == 0
-        d = json.loads(r.stdout.strip())
-        assert "result" in d
-        assert "Petstore" in d["result"]
+        from api_spec_extractor.mcp_tool import _handle
+        result = _handle({"source": petstore_file})
+        assert "Petstore" in result
 
     def test_mcp_detail_mode(self, petstore_file):
-        req = json.dumps({
-            "name": "extract_api_spec",
-            "parameters": {"source": petstore_file, "detail": True}
-        })
-        r = subprocess.run(
-            [sys.executable, "-m", "api_spec_extractor.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "**Parameters:**" in d["result"]
-
-    def test_unknown_tool_returns_error(self):
-        r = subprocess.run(
-            [sys.executable, "-m", "api_spec_extractor.mcp_tool"],
-            input='{"name":"nope","parameters":{}}\n', capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "error" in d
+        from api_spec_extractor.mcp_tool import _handle
+        result = _handle({"source": petstore_file, "detail": True})
+        assert "**Parameters:**" in result
 
     def test_mcp_graphql(self, graphql_file):
-        req = json.dumps({"name": "extract_api_spec", "parameters": {"source": graphql_file}})
-        r = subprocess.run(
-            [sys.executable, "-m", "api_spec_extractor.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "result" in d
-        assert "GraphQL" in d["result"]
+        from api_spec_extractor.mcp_tool import _handle
+        result = _handle({"source": graphql_file})
+        assert "GraphQL" in result

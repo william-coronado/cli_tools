@@ -1,47 +1,5 @@
+"""MCP handler for codebase_indexer. Exposed via the unified server (mcp_server.py)."""
 from __future__ import annotations
-import json
-import sys
-
-TOOL_DEFINITIONS = [
-    {
-        "name": "index_codebase",
-        "description": (
-            "Walk a code repository and return a structured index of all files, "
-            "classes, functions, and imports. Use this before reading individual files "
-            "to understand repo structure without loading full file contents."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "repo_path": {
-                    "type": "string",
-                    "description": "Absolute path to the repository root. Defaults to cwd.",
-                },
-                "detail": {
-                    "type": "string",
-                    "enum": ["low", "normal", "high"],
-                    "description": "Index detail level. Use 'low' for large repos, 'high' for deep analysis.",
-                },
-                "format": {
-                    "type": "string",
-                    "enum": ["markdown", "json", "outline"],
-                    "description": "Output format. Default: markdown.",
-                },
-                "include_extensions": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Limit indexing to these file extensions, e.g. [\".py\", \".ts\"]",
-                },
-                "exclude_patterns": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Additional glob patterns to exclude.",
-                },
-            },
-            "required": [],
-        },
-    }
-]
 
 
 def _handle_index_codebase(params: dict) -> str:
@@ -68,26 +26,3 @@ def _handle_index_codebase(params: dict) -> str:
     if fmt == "json":
         return _json.dumps(index.to_json(), indent=2, default=str)
     return index.to_markdown(detail=detail)
-
-
-def main() -> None:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-            name = request.get("name")
-            params = request.get("parameters", {})
-            if name == "index_codebase":
-                result = _handle_index_codebase(params)
-            else:
-                result = json.dumps({"error": f"Unknown tool: {name}"})
-            response = {"result": result}
-        except Exception as exc:
-            response = {"error": str(exc)}
-        print(json.dumps(response), flush=True)
-
-
-if __name__ == "__main__":
-    main()

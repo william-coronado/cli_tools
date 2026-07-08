@@ -91,6 +91,12 @@ class FileAnnotator:
                 return None
             return name
         except Exception:
+            pass
+        # Extension-map fallback when pygments is missing or has no lexer
+        try:
+            from shared.languages import language_for_extension
+            return language_for_extension(path.suffix)
+        except ImportError:
             return None
 
     def _is_binary(self, path: Path) -> bool:

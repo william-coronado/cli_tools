@@ -1,0 +1,5 @@
+# Core dependency — markitdown does the actual conversion, so it is installed
+# with the tool. At runtime the tool still degrades gracefully: if markitdown
+# is absent from the environment, doc_extractor exits 4 with install
+# instructions instead of crashing (see extractor.MissingOptionalDep).
+markitdown[docx,pptx,xlsx,outlook]>=0.1.6

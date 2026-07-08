@@ -118,6 +118,33 @@ class TestOutputProcessing:
         for o in text_outputs:
             assert len(o.text.splitlines()) <= 2
 
+    def test_html_only_output_converted_to_markdown(self):
+        pytest.importorskip("markdownify")
+        from notebook_extractor.extractor import NotebookExtractor, ExtractorOptions
+        out = NotebookExtractor(ExtractorOptions())._process_output({
+            "output_type": "execute_result",
+            "data": {"text/html": ["<table><tr><th>a</th></tr><tr><td>1</td></tr></table>"]},
+        })
+        assert out.text != "<HTML output>"
+        assert "a" in out.text and "1" in out.text
+
+    def test_html_only_output_stub_without_converter(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "markdownify":
+                raise ImportError("markdownify not installed (simulated)")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        from notebook_extractor.extractor import NotebookExtractor, ExtractorOptions
+        out = NotebookExtractor(ExtractorOptions())._process_output({
+            "output_type": "execute_result",
+            "data": {"text/html": ["<table><tr><td>1</td></tr></table>"]},
+        })
+        assert out.text == "<HTML output>"
+
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
@@ -239,20 +266,6 @@ class TestExitCodes:
 
 class TestMCPWrapper:
     def test_extract_notebook_returns_result(self, tiny_notebook):
-        req = json.dumps({"name": "extract_notebook", "parameters": {"path": str(tiny_notebook)}})
-        r = subprocess.run(
-            [sys.executable, "-m", "notebook_extractor.mcp_tool"],
-            input=req + "\n", capture_output=True, text=True,
-        )
-        assert r.returncode == 0
-        d = json.loads(r.stdout.strip())
-        assert "result" in d
-        assert "# Notebook:" in d["result"]
-
-    def test_unknown_tool_returns_error(self):
-        r = subprocess.run(
-            [sys.executable, "-m", "notebook_extractor.mcp_tool"],
-            input='{"name":"nope","parameters":{}}\n', capture_output=True, text=True,
-        )
-        d = json.loads(r.stdout.strip())
-        assert "error" in d
+        from notebook_extractor.mcp_tool import _handle
+        result = _handle({"path": str(tiny_notebook)})
+        assert "# Notebook:" in result

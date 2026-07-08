@@ -22,7 +22,11 @@ class MissingOptionalDep(Exception):
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options", "trace"}
 
 
-def detect_format(source: str, content: str | None = None) -> DetectedFormat:
+def detect_format(
+    source: str,
+    content: str | None = None,
+    content_type: str | None = None,
+) -> DetectedFormat:
     path = Path(source)
     ext = path.suffix.lower()
 
@@ -49,6 +53,16 @@ def detect_format(source: str, content: str | None = None) -> DetectedFormat:
                 return DetectedFormat.OPENAPI_JSON
         except (json.JSONDecodeError, ValueError):
             pass
+
+    # Last resort for URLs: trust the server's Content-Type header
+    if content_type:
+        ct = content_type.split(";")[0].strip().lower()
+        if ct == "application/json" or ct.endswith("+json"):
+            return DetectedFormat.OPENAPI_JSON
+        if "yaml" in ct:
+            return DetectedFormat.OPENAPI_YAML
+        if "graphql" in ct:
+            return DetectedFormat.GRAPHQL
 
     raise WrongContentType(
         f"Cannot detect OpenAPI or GraphQL format for: {source!r}. "

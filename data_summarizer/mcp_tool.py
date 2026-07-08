@@ -1,46 +1,5 @@
+"""MCP handler for data_summarizer. Exposed via the unified server (mcp_server.py)."""
 from __future__ import annotations
-
-import json
-import sys
-
-
-TOOL_DEFINITIONS = [
-    {
-        "name": "summarize_data",
-        "description": (
-            "Summarize a tabular or structured data file (CSV, TSV, JSON, JSONL, "
-            "Parquet, Excel, SQLite). Returns schema, sample rows (head + tail), "
-            "and per-column statistics. Use instead of reading raw data files to "
-            "save tokens."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Path to file."},
-                "format_hint": {
-                    "type": "string",
-                    "enum": ["csv", "tsv", "json", "jsonl", "parquet", "xlsx", "sqlite"],
-                },
-                "table": {
-                    "type": "string",
-                    "description": "SQLite table or Excel sheet to restrict to.",
-                },
-                "sample": {
-                    "type": "integer",
-                    "description": "Head AND tail row count (default 5).",
-                },
-                "columns": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Limit to specific columns.",
-                },
-                "no_stats": {"type": "boolean"},
-                "max_rows": {"type": "integer"},
-            },
-            "required": ["path"],
-        },
-    }
-]
 
 
 def _handle(params: dict) -> str:
@@ -58,28 +17,3 @@ def _handle(params: dict) -> str:
     )
     result = DataSummarizer(opts).summarize(path)
     return result.to_markdown()
-
-
-def main() -> None:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-            name = request.get("name")
-            params = request.get("parameters", {})
-            if name == "summarize_data":
-                result = _handle(params)
-            else:
-                response = {"error": f"Unknown tool: {name}"}
-                print(json.dumps(response), flush=True)
-                continue
-            response = {"result": result}
-        except Exception as e:
-            response = {"error": str(e)}
-        print(json.dumps(response), flush=True)
-
-
-if __name__ == "__main__":
-    main()

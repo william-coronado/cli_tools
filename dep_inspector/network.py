@@ -105,7 +105,15 @@ def _is_outdated(resolved: str | None, latest: str | None) -> bool | None:
         return None
     if resolved == latest:
         return False
-    # Heuristic: compare as version tuples (split on . and -)
+    try:
+        from packaging.version import InvalidVersion, Version
+        try:
+            return Version(resolved.lstrip("v")) < Version(latest.lstrip("v"))
+        except InvalidVersion:
+            pass  # non-PEP440 string (e.g. odd semver build metadata)
+    except ImportError:
+        pass
+    # Heuristic fallback: compare as version tuples (split on . and -)
     a = _version_key(resolved)
     b = _version_key(latest)
     return a < b
@@ -153,16 +161,25 @@ def _enrich_audit(
     except Exception as e:
         return [f"{ecosystem}: OSV audit failed ({e!s}); continuing without audit data"]
 
-    # Pair results back with deps; OSV returns parallel array
+    # Pair results back with deps; OSV returns parallel array.
+    # /querybatch returns lean entries (id only) — collect every id first so
+    # the detail lookups run once per unique vuln, in parallel.
+    dep_vuln_ids: list[tuple[Dependency, list[str]]] = []
+    all_ids: set[str] = set()
     for d, result in zip(targets, results):
         vulns = result.get("vulns") or []
         if not vulns:
             continue
+        ids = [v["id"] for v in vulns]
+        dep_vuln_ids.append((d, ids))
+        all_ids.update(ids)
+
+    details = _fetch_osv_details(client, sorted(all_ids), opts.network_workers)
+
+    for d, ids in dep_vuln_ids:
         ids_seen: set[str] = set()
-        # OSV /querybatch returns lean entries (id only). Fetch full details for each.
-        full = _fetch_osv_details(client, [v["id"] for v in vulns])
-        for vuln in full:
-            adv = _normalize_advisory(vuln, d.resolved)
+        for vid in ids:
+            adv = _normalize_advisory(details[vid], d.resolved)
             if adv.id in ids_seen:
                 continue
             ids_seen.add(adv.id)
@@ -173,17 +190,29 @@ def _enrich_audit(
     return []
 
 
-def _fetch_osv_details(client: httpx.Client, ids: Iterable[str]) -> list[dict]:
-    """Look up individual vulnerability details by ID."""
-    out: list[dict] = []
-    for vid in ids:
-        try:
-            resp = client.get(f"https://api.osv.dev/v1/vulns/{vid}")
-            resp.raise_for_status()
-            out.append(resp.json())
-        except Exception:
-            # Synthesize minimal record so caller still sees the id
-            out.append({"id": vid, "summary": "(details unavailable)"})
+def _fetch_osv_details(
+    client: httpx.Client, ids: Iterable[str], workers: int = 16,
+) -> dict[str, dict]:
+    """Look up vulnerability details by ID, in parallel. Keyed by OSV id."""
+    ids = list(ids)
+    out: dict[str, dict] = {}
+    if not ids:
+        return out
+
+    def fetch(vid: str) -> dict:
+        resp = client.get(f"https://api.osv.dev/v1/vulns/{vid}")
+        resp.raise_for_status()
+        return resp.json()
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(ids))) as pool:
+        futures = {pool.submit(fetch, vid): vid for vid in ids}
+        for fut in as_completed(futures):
+            vid = futures[fut]
+            try:
+                out[vid] = fut.result()
+            except Exception:
+                # Synthesize minimal record so caller still sees the id
+                out[vid] = {"id": vid, "summary": "(details unavailable)"}
     return out
 
 
@@ -229,10 +258,11 @@ def _extract_severity(vuln: dict) -> str:
             s = _cvss_score(entry)
             if s is not None and (score is None or s > score):
                 score = s
-    # database_specific.severity (string like "HIGH")
+    # database_specific.severity (string like "HIGH"; GHSA uses "MODERATE")
     db_sev = vuln.get("database_specific", {}).get("severity")
     if score is None and isinstance(db_sev, str):
-        return db_sev.lower() if db_sev.lower() in _SEVERITY_ORDER else "unknown"
+        label = {"moderate": "medium"}.get(db_sev.lower(), db_sev.lower())
+        return label if label in _SEVERITY_ORDER else "unknown"
 
     if score is None:
         return "unknown"

@@ -26,6 +26,17 @@ class JSONReader(Reader):
         size = path.stat().st_size
         warnings: list[str] = []
 
+        # Whole-document JSON cannot be streamed; refuse files that would
+        # blow up memory instead of loading them.
+        if size > opts.max_json_bytes:
+            raise ValueError(
+                f"JSON file is {size / 1_000_000:.0f} MB, above the "
+                f"{opts.max_json_bytes / 1_000_000:.0f} MB load limit "
+                f"(whole-document JSON must be parsed in memory). "
+                f"Convert to JSONL for streaming summarization, or raise the "
+                f"limit with --max-json-mb."
+            )
+
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 data = json.load(f)
