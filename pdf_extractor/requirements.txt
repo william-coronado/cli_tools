@@ -1,10 +1,16 @@
 pdfplumber>=0.10.0
 # pdfminer.six is a transitive dep of pdfplumber, but pdfplumber's own floor (0.10.0)
 # does not guarantee a patched version. Pinned directly to close CVE-2025-64512
-# (insecure pickle deserialization -> RCE via a crafted PDF), fixed in 20251107.
+# (insecure pickle deserialization -> RCE via a crafted PDF, fixed in 20251107) and
+# CVE-2025-70559 (GHSA-f83h-ghpp-7wcc, CVSS 7.8: the 20251107 fix for CVE-2025-64512
+# was incomplete — CMap loading still deserialized untrusted pickle.gz files, allowing
+# local privilege escalation), fixed in 20251230.
 # Do not remove even though it's not imported directly by this package.
-pdfminer.six>=20251107
+pdfminer.six>=20251230
 pytesseract>=0.3.10
-Pillow>=12.2.0
+# Floor closes 5 CVEs fixed in 12.3.0: CVE-2026-54059/54060/55379/55380 (decompression
+# bomb checks missing from PCF/BDF/GD font and FontFile.compile loaders) and
+# CVE-2026-55798 (shell injection via WindowsViewer.get_command with shell=True).
+Pillow>=12.3.0
 pdf2image>=1.16.0
 rich>=13.0.0
