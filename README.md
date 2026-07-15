@@ -1,6 +1,6 @@
 # Claude Code Token-Saving Tools
 
-A suite of twelve Python CLI tools that pre-process common inputs before handing them
+A suite of thirteen Python CLI tools that pre-process common inputs before handing them
 to Claude Code — cutting token consumption by 10–100× on typical tasks.
 
 Each tool is independently installable, exposes a consistent CLI interface, and
@@ -20,11 +20,12 @@ a bash step.
 | [`log_summarizer`](#log-summarizer) | Reading large log files line by line | 10 MB → ~30 lines of signal |
 | [`git_context`](#git-context) | 5–8 sequential `git` commands per file | Multi-command → single call |
 | [`data_summarizer`](#data-summarizer) | Reading raw CSV/Parquet/SQLite/Excel/JSON | Large files → schema + sample + stats¹ |
-| [`dep_inspector`](#dep_inspector) | Reading raw lockfiles (500 KB+ package-lock.json) | Declared/resolved/transitive + outdated/audit |
+| [`dep_inspector`](#dep_inspector) | Reading raw manifests/lockfiles (any size) | Declared/resolved/transitive + outdated/audit |
 | [`notebook_extractor`](#notebook_extractor) | Reading raw .ipynb with base64/stream noise | Clean cells + stubbed images + deduped streams |
 | [`api_spec_extractor`](#api_spec_extractor) | Pasting raw OpenAPI/Swagger/GraphQL specs | Endpoint catalog or per-endpoint detail (5–100× reduction) |
 | [`http_inspector`](#http_inspector) | Full API response bodies in context | Status + headers + body shape + sample (5–100× reduction) |
 | [`doc_extractor`](#doc_extractor) | Reading binary office formats (DOCX/PPTX/XLSX/EPUB/MSG) | Binary documents → clean markdown |
+| [`inspect_image`](#inspect_image) | Shelling out to Python/PIL for image dimensions | Single call → width/height/mode/format/size |
 
 ¹ CSV (stdlib path) and JSONL stream row-by-row and handle arbitrarily large files.
 Whole-document JSON, Parquet, and Excel are parsed in memory; JSON files above a
@@ -478,6 +479,9 @@ python -m data_summarizer.cli sales.csv --columns order_id,amount_usd,region
 python -m data_summarizer.cli analytics.sqlite
 python -m data_summarizer.cli analytics.sqlite --table users --table orders
 
+# SQLite point query — a single read-only SELECT instead of a whole-table dump
+python -m data_summarizer.cli analytics.sqlite --query "SELECT id, name FROM users WHERE active = 1"
+
 # JSON: array-of-records is summarized like a table;
 #       a nested object falls back to a top-level structural summary
 python -m data_summarizer.cli config.json
@@ -501,10 +505,15 @@ python -m data_summarizer.cli sales.csv --format json
 summarize_data(path="sales.csv")
 summarize_data(path="analytics.sqlite", table="orders")
 summarize_data(path="huge.csv", max_rows=50000, no_stats=true)
+summarize_data(path="analytics.sqlite", query="SELECT id, name FROM users WHERE active = 1")
 ```
 
 **Exit codes:** `0` success · `1` input/parse error · `3` wrong content type
 (no reader matches) · `4` missing optional dep (e.g. Parquet without pyarrow).
+
+Note: `query` is SELECT-only (validated before execution, and the underlying
+SQLite connection is opened read-only regardless) — this suite is a read-only
+pre-processor, not a database admin tool; mutations are out of scope.
 
 ---
 
@@ -740,6 +749,31 @@ extract_document(path="deck.pptx", max_chars=50000)
 
 ---
 
+### `inspect_image`
+
+Reports image metadata — dimensions, color mode, format, and file size — via
+Pillow. Use instead of shelling out to Python/PIL for a quick dimension check,
+e.g. before pixel-precise UI or asset work.
+
+**Common usage:**
+```bash
+# Basic metadata
+python -m inspect_image.cli sprite.png
+
+# JSON output for downstream tools
+python -m inspect_image.cli sprite.png --format json
+```
+
+**MCP usage:**
+```
+inspect_image(path="sprite.png")
+```
+
+**Exit codes:** `0` success · `1` missing file · `3` not a recognized image
+format · `4` missing Pillow dependency.
+
+---
+
 ## Recommended Workflows
 
 These sequences show how to chain the tools for common Claude Code tasks.
@@ -867,6 +901,20 @@ pasting them raw:
 2. extract_document(path="architecture-deck.pptx")   # slides → markdown outline
 3. summarize_data(path="metrics.xlsx")               # workbook as data → schema + stats
    (extract_document(path="metrics.xlsx") instead for the document view)
+```
+
+---
+
+### Working with image/UI assets
+
+Get exact pixel dimensions before doing 9-slice, sprite, or layout work, instead
+of shelling out to Python/PIL for a one-off check:
+
+```
+1. smart_file_tree(path="assets/", include_extensions=["png", "jpg"])
+   → Orient in an unfamiliar asset directory
+2. inspect_image(path="assets/ui/panel_9slice.png")
+   → width/height/mode/format before computing corner insets
 ```
 
 ---

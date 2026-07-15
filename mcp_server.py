@@ -31,15 +31,21 @@ from mcp.types import ToolAnnotations
 mcp = FastMCP(
     "cli-tools",
     instructions=(
-        "Token-efficient pre-processors for local files and web resources. "
-        "Prefer these over reading raw sources when the input is large or "
-        "noisy: PDFs (including scanned/OCR), Jupyter notebooks, log files, "
-        "tabular data (CSV/JSON/JSONL/Parquet/Excel/SQLite), dependency "
-        "manifests and lockfiles, OpenAPI/GraphQL specs, office documents "
-        "(DOCX/PPTX/XLSX/EPUB), git history, repository structure, "
-        "JS-rendered web pages, and HTTP APIs. Each tool returns a compact "
-        "markdown summary — typically 10-100x fewer tokens than the raw "
-        "source."
+        "Token-efficient pre-processors that do more than a raw read, "
+        "regardless of input size: cross-reference dependency manifests "
+        "against lockfiles and CVE databases, filter noise out of "
+        "repository structure, infer HTTP/JSON body shape, extract focused "
+        "git history, OCR scanned PDFs, dedupe noisy logs and notebook "
+        "output, and more. Reach for these before `find`/`ls -R`, `cat`, "
+        "`curl`, or `sqlite3` on: PDFs (including scanned/OCR), Jupyter "
+        "notebooks, log files, tabular data (CSV/JSON/JSONL/Parquet/Excel/"
+        "SQLite), dependency manifests and lockfiles, OpenAPI/GraphQL "
+        "specs, office documents (DOCX/PPTX/XLSX/EPUB), git history, "
+        "repository structure, JS-rendered web pages, and HTTP APIs — even "
+        "when the individual file or response looks small, since the value "
+        "is in the structure/cross-referencing, not just token count. Each "
+        "tool returns a compact markdown summary — typically 10-100x fewer "
+        "tokens than the raw source."
     ),
 )
 
@@ -114,7 +120,8 @@ def smart_file_tree(
     """Generate an annotated file tree: sizes, ages, languages, and flags
     (large, binary, recently modified). Excludes noise (node_modules,
     __pycache__, build artifacts). ``modified_after`` takes a window like
-    '7d' or '24h'. Use to orient in a codebase before reading files."""
+    '7d' or '24h'. Use before running `find`/`ls -R` on an unfamiliar
+    directory, and to orient in a codebase before reading files."""
     from smart_file_tree.mcp_tool import _handle_call
     return _handle_call({
         "path": path,
@@ -185,8 +192,10 @@ def git_file_context(
     no_blame: bool = False,
 ) -> str:
     """Git context for a specific file: recent commits touching it, diff vs.
-    base branch, blame summary, and related files. Use before editing a file
-    to understand its history. ``no_blame`` is faster for large files."""
+    base branch, blame summary, and related files. For deep-history/blame
+    archaeology before editing a file — not a replacement for the routine
+    `git status`/`diff`/`log` pre-commit check. ``no_blame`` is faster for
+    large files."""
     from git_context.mcp_tool import _handle_git_file_context
     return _handle_git_file_context({
         "file_path": file_path,
@@ -202,7 +211,9 @@ def git_repo_context(
     commits: int = 10,
 ) -> str:
     """Repo-level git context: branch status, uncommitted changes, and recent
-    commit activity. Use at session start to orient yourself."""
+    commit activity. Use at session start to orient yourself in an unfamiliar
+    repo — not a replacement for the routine `git status`/`diff`/`log`
+    pre-commit check."""
     from git_context.mcp_tool import _handle_git_repo_context
     return _handle_git_repo_context({"repo_path": repo_path, "commits": commits})
 
@@ -221,11 +232,16 @@ def summarize_data(
     columns: Optional[list[str]] = None,
     no_stats: bool = False,
     max_rows: int = 100_000,
+    query: Optional[str] = None,
 ) -> str:
     """Summarize a tabular/structured data file (CSV, TSV, JSON, JSONL,
     Parquet, Excel, SQLite): schema, sample rows (head + tail), and per-column
-    statistics. ``table`` selects a SQLite table or Excel sheet. Use instead
-    of reading raw data files."""
+    statistics. ``table`` selects a SQLite table or Excel sheet. ``query``
+    runs a single read-only SELECT against a SQLite file instead of
+    summarizing whole tables — use for a targeted lookup rather than a full
+    dump (SELECT-only, including `WITH ... SELECT` CTEs; no mutations).
+    ``query`` cannot be combined with ``table``/``columns``. Use instead of
+    reading raw data files."""
     from data_summarizer.mcp_tool import _handle
     return _handle({
         "path": path,
@@ -235,6 +251,7 @@ def summarize_data(
         "columns": columns,
         "no_stats": no_stats,
         "max_rows": max_rows,
+        "query": query,
     })
 
 
@@ -252,9 +269,10 @@ def inspect_dependencies(
     severity: Optional[list[str]] = None,
 ) -> str:
     """Inspect a project's dependency manifest and lockfile (Python or
-    JavaScript): declared/resolved/transitive summary, with optional
-    ``outdated`` (registry latest) and ``audit`` (OSV vulnerabilities) checks.
-    Use instead of reading raw lockfiles (routinely 500 KB+)."""
+    JavaScript): cross-references declared vs. resolved vs. transitive deps,
+    with optional ``outdated`` (registry latest) and ``audit`` (OSV
+    vulnerabilities) checks — value `cat` can't give you regardless of
+    manifest size. Use instead of reading raw manifests/lockfiles."""
     from dep_inspector.mcp_tool import _handle
     return _handle({
         "path": path,
@@ -363,7 +381,9 @@ def inspect_http(
     """Make an HTTP request and return a token-efficient summary: status code,
     selected response headers, and a shape + sample of the body. JSON
     responses show a schema + N sample records. ``headers`` are
-    ["Name: Value", ...]. Use instead of curl when you care about structure."""
+    ["Name: Value", ...]. Use instead of curl for large, paginated, or
+    unknown-shape bodies; a plain curl is fine for a quick small/known-shape
+    check (e.g. a health-check endpoint you already know the shape of)."""
     from http_inspector.mcp_tool import _handle
     return _handle({
         "url": url,
@@ -377,6 +397,18 @@ def inspect_http(
         "show_all_headers": show_all_headers,
         "timeout": timeout,
     })
+
+
+# --------------------------------------------------------------------------- #
+# inspect_image
+# --------------------------------------------------------------------------- #
+@mcp.tool(title="Image Inspector", annotations=_LOCAL_RO)
+def inspect_image(path: str) -> str:
+    """Report image metadata: dimensions, color mode, format, and file size.
+    Use instead of shelling out to Python/PIL for a quick dimension check
+    (e.g. before doing pixel-precise UI/asset work)."""
+    from inspect_image.mcp_tool import _handle
+    return _handle({"path": path})
 
 
 if __name__ == "__main__":

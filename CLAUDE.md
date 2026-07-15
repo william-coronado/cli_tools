@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A suite of twelve Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
+A suite of thirteen Python CLI tools that pre-process inputs before passing them to Claude Code, reducing token consumption by 10–100×. Each tool is independently installable and optionally exposes an MCP interface.
 
 | Tool | Purpose |
 |---|---|
@@ -14,12 +14,13 @@ A suite of twelve Python CLI tools that pre-process inputs before passing them t
 | `url_fetcher` | Fetches URLs as clean markdown; strips nav/footers/ads/scripts |
 | `log_summarizer` | Parses log files and returns only errors, warnings, tracebacks, and metrics |
 | `git_context` | Extracts focused git context (commits, diff, blame, status) for a file or repo |
-| `data_summarizer` | Summarizes CSV/TSV/JSON/JSONL/Parquet/Excel/SQLite files: schema + sample + stats |
+| `data_summarizer` | Summarizes CSV/TSV/JSON/JSONL/Parquet/Excel/SQLite files: schema + sample + stats; `--query` runs a read-only SELECT against a SQLite file |
 | `dep_inspector` | Inspects Python/JS manifests + lockfiles: declared/resolved/transitive + outdated/audit |
 | `notebook_extractor` | Extracts code/markdown from .ipynb; stubs images, truncates outputs, dedupes streams |
 | `api_spec_extractor` | Extracts endpoint catalog or detail from OpenAPI 2/3 and GraphQL SDL specs |
 | `http_inspector` | Makes an HTTP request and returns status + headers + body shape/sample; HTML bodies → markdown excerpt (optional markitdown) |
 | `doc_extractor` | Converts DOCX/PPTX/XLSX/EPUB/MSG to markdown via markitdown |
+| `inspect_image` | Reports image dimensions, color mode, format, and file size (Pillow-based) |
 
 ## Setup
 
@@ -30,7 +31,7 @@ source .venv/bin/activate
 bash setup.sh          # installs all pip deps, checks system deps, smoke-tests imports
 ```
 
-`setup.sh` handles pip installs for all twelve tools (plus the MCP server dep), checks Git/Tesseract/Poppler,
+`setup.sh` handles pip installs for all thirteen tools (plus the MCP server dep), checks Git/Tesseract/Poppler,
 warns about optional deps (Playwright, easyocr, markitdown), and exits non-zero on any failure.
 To install a single tool's deps manually: `pip install -r <tool_name>/requirements.txt`.
 
@@ -45,6 +46,7 @@ System dependencies:
 - `http_inspector`: httpx required — `pip install httpx`; markitdown is optional (HTML body → markdown)
 - `notebook_extractor`: markdownify is optional (HTML-only cell outputs → markdown tables)
 - `doc_extractor`: markitdown required for conversion (exits 4 without it) — `pip install 'markitdown[docx,pptx,xlsx,outlook]'`
+- `inspect_image`: Pillow required — `pip install Pillow`
 
 Verify:
 ```bash
@@ -159,6 +161,12 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
 │   ├── renderer.py         # markdown/json/text
 │   ├── mcp_tool.py
 │   └── requirements.txt
+├── inspect_image/
+│   ├── cli.py
+│   ├── inspector.py        # inspect_image() + ImageInfo; Pillow-based
+│   ├── renderer.py         # markdown/json/text
+│   ├── mcp_tool.py
+│   └── requirements.txt
 └── tests/
     ├── conftest.py
     ├── fixtures/           # HTML, log, and PDF test fixtures
@@ -173,7 +181,8 @@ Exit codes are consistent across all tools: `0` success, `1` input/parse error, 
     ├── test_notebook_extractor.py
     ├── test_api_spec_extractor.py
     ├── test_http_inspector.py
-    └── test_doc_extractor.py
+    ├── test_doc_extractor.py
+    └── test_inspect_image.py
 ```
 
 ### Key Invariants
@@ -226,13 +235,13 @@ prepends its own directory to `sys.path`, so the tool packages import
 regardless of the working directory. Install the server dependency with
 `pip install -r requirements-mcp.txt` (or `setup.sh`).
 
-Verify in Claude Code with `/mcp` — the `cli-tools` server should list 13 tool
+Verify in Claude Code with `/mcp` — the `cli-tools` server should list 14 tool
 functions (`extract_pdf_text`, `index_codebase`, `smart_file_tree`, `fetch_url`,
 `summarize_log`, `git_file_context`, `git_repo_context`, `summarize_data`,
 `inspect_dependencies`, `extract_notebook`, `extract_document`,
-`extract_api_spec`, `inspect_http`).
-That is 13, not 12, because the `git_context` tool exposes two MCP functions
-(`git_file_context` and `git_repo_context`); the other eleven tools expose one each.
+`extract_api_spec`, `inspect_http`, `inspect_image`).
+That is 14, not 13, because the `git_context` tool exposes two MCP functions
+(`git_file_context` and `git_repo_context`); the other twelve tools expose one each.
 
 The per-tool `<tool>/mcp_tool.py` modules contain only the `_handle()` handlers
 (exercised directly by the test suite); `mcp_server.py` is the single front

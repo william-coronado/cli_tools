@@ -66,6 +66,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--all-tables", action="store_true", dest="all_tables")
     p.add_argument("--max-tables", type=int, default=20, dest="max_tables")
+    p.add_argument(
+        "--query",
+        default=None,
+        help=(
+            "Run a single read-only SELECT against a SQLite file instead of "
+            "summarizing whole tables (e.g. --query 'SELECT id, name FROM "
+            "users WHERE active = 1'). SELECT-only (including `WITH ... "
+            "SELECT` CTEs); no mutations. Cannot be combined with "
+            "--table/--all-tables/--columns — the query already selects its "
+            "own tables and columns."
+        ),
+    )
 
     # Directory
     p.add_argument(
@@ -106,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         columns=_parse_columns(args.columns),
         tables=args.table,
         format_hint=args.format_hint,
+        query=args.query,
     )
 
     summarizer = DataSummarizer(opts)
