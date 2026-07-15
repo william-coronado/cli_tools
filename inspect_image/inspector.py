@@ -48,7 +48,6 @@ def inspect_image(path: str | Path) -> ImageInfo:
 
     try:
         with Image.open(p) as im:
-            im.load()
             width, height = im.size
             mode = im.mode
             fmt = im.format

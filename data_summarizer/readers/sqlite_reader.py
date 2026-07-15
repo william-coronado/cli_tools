@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from collections import deque
@@ -24,6 +25,13 @@ class SQLiteReader(Reader):
         t0 = time.monotonic()
         size = path.stat().st_size
         warnings: list[str] = []
+
+        if opts.query and (opts.tables or opts.all_tables or opts.columns):
+            raise ValueError(
+                "--query cannot be combined with --table/--all-tables/--columns "
+                "(the query already selects its own tables and columns); "
+                "use one or the other"
+            )
 
         uri = f"file:{path}?mode=ro"
         try:
@@ -75,33 +83,18 @@ class SQLiteReader(Reader):
             warnings=warnings,
         )
 
-    def _summarize_query(
+    def _accumulate_from_cursor(
         self,
-        conn: sqlite3.Connection,
-        query: str,
+        cur: sqlite3.Cursor,
+        col_names: list[str],
         opts: SummarizerOptions,
-    ) -> TableSummary:
-        cur = conn.cursor()
-        try:
-            cur.execute(query)
-        except sqlite3.Error as e:
-            raise ValueError(f"Query failed: {e}") from e
-        col_names = [d[0] for d in cur.description] if cur.description else []
+    ) -> tuple[dict[str, ColumnAccumulator], list[dict[str, Any]], list[dict[str, Any]], int, bool]:
+        """Consume rows from an already-executing cursor, building per-column
+        accumulators plus head/tail samples. Shared by table and query
+        summarization so their sampling/stats behavior can't drift apart.
 
-        if not col_names:
-            return TableSummary(
-                name="query result",
-                row_count=0,
-                column_count=0,
-                columns=[],
-                stats=[],
-                head=[],
-                tail=[],
-                notes=["Query returned no columns"],
-            )
-
-        col_names = col_names[: opts.max_columns]
-
+        Returns (accumulators, head_rows, tail_rows, rows_scanned, truncated).
+        """
         accumulators: dict[str, ColumnAccumulator] = {
             n: ColumnAccumulator(
                 name=n,
@@ -134,11 +127,31 @@ class SQLiteReader(Reader):
                 if tail_maxlen:
                     tail_buf.append(row_dict)
 
+        tail_rows = list(tail_buf)
+        if head_rows and tail_rows and rows_scanned <= opts.sample_head + len(tail_rows):
+            tail_rows = []
+
+        return accumulators, head_rows, tail_rows, rows_scanned, truncated
+
+    def _build_columns_and_stats(
+        self,
+        col_names: list[str],
+        accumulators: dict[str, ColumnAccumulator],
+        opts: SummarizerOptions,
+        declared_types: dict[str, str | None] | None = None,
+    ) -> tuple[list[ColumnInfo], list[ColumnStats]]:
+        """Build ColumnInfo/ColumnStats from accumulators. ``declared_types``
+        (SQL column types from PRAGMA table_info) lets table summaries widen
+        an ambiguous inferred dtype; query results have no declared types."""
         columns: list[ColumnInfo] = []
         stats: list[ColumnStats] = []
         for name in col_names:
             acc = accumulators[name]
-            dtype = acc.dtype()
+            inferred = acc.dtype()
+            if declared_types is not None and inferred in ("mixed", "null", "string"):
+                dtype = _normalize_sql_type(declared_types.get(name))
+            else:
+                dtype = inferred
             columns.append(
                 ColumnInfo(
                     name=name,
@@ -171,10 +184,39 @@ class SQLiteReader(Reader):
                         top_values=top_vals,
                     )
                 )
+        return columns, stats
 
-        tail_rows = list(tail_buf)
-        if head_rows and tail_rows and rows_scanned <= opts.sample_head + len(tail_rows):
-            tail_rows = []
+    def _summarize_query(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        opts: SummarizerOptions,
+    ) -> TableSummary:
+        cur = conn.cursor()
+        try:
+            cur.execute(query)
+        except sqlite3.Error as e:
+            raise ValueError(f"Query failed: {e}") from e
+        col_names = [d[0] for d in cur.description] if cur.description else []
+
+        if not col_names:
+            return TableSummary(
+                name="query result",
+                row_count=0,
+                column_count=0,
+                columns=[],
+                stats=[],
+                head=[],
+                tail=[],
+                notes=["Query returned no columns"],
+            )
+
+        col_names = col_names[: opts.max_columns]
+
+        accumulators, head_rows, tail_rows, rows_scanned, truncated = (
+            self._accumulate_from_cursor(cur, col_names, opts)
+        )
+        columns, stats = self._build_columns_and_stats(col_names, accumulators, opts)
 
         notes: list[str] = []
         if truncated:
@@ -213,6 +255,7 @@ class SQLiteReader(Reader):
             selected_cols = all_columns
         selected_cols = selected_cols[: opts.max_columns]
         col_names = [n for n, _ in selected_cols]
+        declared_types = {n: t for n, t in selected_cols}
 
         if not col_names:
             return TableSummary(
@@ -240,77 +283,12 @@ class SQLiteReader(Reader):
             (scan_limit,),
         )
 
-        accumulators: dict[str, ColumnAccumulator] = {
-            n: ColumnAccumulator(
-                name=n,
-                max_distinct=opts.max_distinct,
-                keep_samples_for_median=opts.median,
-            )
-            for n in col_names
-        }
-
-        head_rows: list[dict[str, Any]] = []
-        tail_maxlen = opts.sample_tail if (not opts.no_sample and opts.sample_tail > 0) else 0
-        tail_buf: deque[dict[str, Any]] = deque(maxlen=tail_maxlen) if tail_maxlen else deque()
-
-        rows_scanned = 0
-        for row in cur:
-            rows_scanned += 1
-            row_dict: dict[str, Any] = {}
-            for i, name in enumerate(col_names):
-                val = row[i]
-                row_dict[name] = val
-                accumulators[name].update(val)
-
-            if not opts.no_sample:
-                if len(head_rows) < opts.sample_head:
-                    head_rows.append(row_dict)
-                if tail_maxlen:
-                    tail_buf.append(row_dict)
-
-        columns: list[ColumnInfo] = []
-        stats: list[ColumnStats] = []
-        for name, declared_type in selected_cols:
-            acc = accumulators[name]
-            # Prefer declared SQL type if accumulator inferred mixed/null
-            inferred = acc.dtype()
-            dtype = _normalize_sql_type(declared_type) if inferred in ("mixed", "null", "string") else inferred
-            columns.append(
-                ColumnInfo(
-                    name=name,
-                    dtype=dtype,
-                    nullable=acc.null_count > 0,
-                    null_count=acc.null_count,
-                    null_pct=acc.null_pct(),
-                    distinct_count=acc.distinct_count,
-                )
-            )
-            if not opts.no_stats:
-                top_vals = (
-                    acc.top_values(opts.top_k)
-                    if dtype not in ("int", "float", "datetime", "null")
-                    else []
-                )
-                stats.append(
-                    ColumnStats(
-                        name=name,
-                        count=acc.count,
-                        null_count=acc.null_count,
-                        distinct_count=acc.distinct_count,
-                        min=acc.min_val,
-                        max=acc.max_val,
-                        mean=acc.mean,
-                        median=acc.median if opts.median else None,
-                        std=acc.std,
-                        min_date=acc.min_dt,
-                        max_date=acc.max_dt,
-                        top_values=top_vals,
-                    )
-                )
-
-        tail_rows = list(tail_buf)
-        if head_rows and tail_rows and rows_scanned <= opts.sample_head + len(tail_rows):
-            tail_rows = []
+        accumulators, head_rows, tail_rows, rows_scanned, _ = (
+            self._accumulate_from_cursor(cur, col_names, opts)
+        )
+        columns, stats = self._build_columns_and_stats(
+            col_names, accumulators, opts, declared_types
+        )
 
         notes: list[str] = []
         if truncated:
@@ -331,6 +309,106 @@ class SQLiteReader(Reader):
         )
 
 
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _strip_leading_comments(s: str) -> str:
+    """Strip leading whitespace and SQL comments (-- line, /* block */)."""
+    s = s.lstrip()
+    while True:
+        if s.startswith("--"):
+            nl = s.find("\n")
+            s = s[nl + 1 :] if nl != -1 else ""
+            s = s.lstrip()
+            continue
+        if s.startswith("/*"):
+            end = s.find("*/")
+            s = s[end + 2 :] if end != -1 else ""
+            s = s.lstrip()
+            continue
+        break
+    return s
+
+
+def _skip_balanced_parens(s: str, i: int) -> int:
+    """Given s[i] == '(', return the index just past the matching ')',
+    respecting quoted string/identifier literals. Returns len(s) if
+    unbalanced (caller treats that as malformed)."""
+    depth = 0
+    in_single = in_double = False
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if in_single:
+            if c == "'":
+                if i + 1 < n and s[i + 1] == "'":
+                    i += 2
+                    continue
+                in_single = False
+            i += 1
+            continue
+        if in_double:
+            if c == '"':
+                if i + 1 < n and s[i + 1] == '"':
+                    i += 2
+                    continue
+                in_double = False
+            i += 1
+            continue
+        if c == "'":
+            in_single = True
+        elif c == '"':
+            in_double = True
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return n
+
+
+def _cte_prefix_end(s: str) -> int | None:
+    """Given ``s`` starting with ``WITH [RECURSIVE]``, scan past the
+    comma-separated CTE definitions (``name [(cols)] AS (subquery)``) and
+    return the index where the final statement begins. Returns None if the
+    input doesn't parse as a well-formed CTE prefix."""
+    m = re.match(r"(?i)^with\s+(recursive\s+)?", s)
+    if not m:
+        return None
+    i = m.end()
+    n = len(s)
+    while True:
+        m = _IDENT_RE.match(s, i)
+        if not m:
+            return None
+        i = m.end()
+        while i < n and s[i].isspace():
+            i += 1
+        if i < n and s[i] == "(":
+            i = _skip_balanced_parens(s, i)
+            while i < n and s[i].isspace():
+                i += 1
+        m2 = re.match(r"(?i)as\b", s[i:])
+        if not m2:
+            return None
+        i += m2.end()
+        while i < n and s[i].isspace():
+            i += 1
+        if i >= n or s[i] != "(":
+            return None
+        i = _skip_balanced_parens(s, i)
+        while i < n and s[i].isspace():
+            i += 1
+        if i < n and s[i] == ",":
+            i += 1
+            while i < n and s[i].isspace():
+                i += 1
+            continue
+        return i
+
+
 def _validate_select_only(query: str) -> None:
     stripped = query.strip()
     if not stripped:
@@ -339,11 +417,25 @@ def _validate_select_only(query: str) -> None:
     body = stripped[:-1] if stripped.endswith(";") else stripped
     if ";" in body:
         raise ValueError("--query must be a single SELECT statement")
-    if not stripped.lower().startswith("select"):
-        raise ValueError(
-            "--query only supports SELECT statements; this suite is a "
-            "read-only pre-processor, not a database admin tool"
-        )
+
+    no_comments = _strip_leading_comments(body)
+    error = ValueError(
+        "--query only supports SELECT statements (including `WITH ... SELECT` "
+        "CTEs); this suite is a read-only pre-processor, not a database admin "
+        "tool"
+    )
+
+    if re.match(r"(?i)^with\b", no_comments):
+        rest_start = _cte_prefix_end(no_comments)
+        if rest_start is None:
+            raise error
+        rest = _strip_leading_comments(no_comments[rest_start:])
+        if not re.match(r"(?i)^select\b", rest):
+            raise error
+        return
+
+    if not re.match(r"(?i)^select\b", no_comments):
+        raise error
 
 
 def _quote_ident(name: str) -> str:

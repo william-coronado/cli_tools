@@ -239,7 +239,9 @@ def summarize_data(
     statistics. ``table`` selects a SQLite table or Excel sheet. ``query``
     runs a single read-only SELECT against a SQLite file instead of
     summarizing whole tables — use for a targeted lookup rather than a full
-    dump (SELECT-only; no mutations). Use instead of reading raw data files."""
+    dump (SELECT-only, including `WITH ... SELECT` CTEs; no mutations).
+    ``query`` cannot be combined with ``table``/``columns``. Use instead of
+    reading raw data files."""
     from data_summarizer.mcp_tool import _handle
     return _handle({
         "path": path,

@@ -72,7 +72,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Run a single read-only SELECT against a SQLite file instead of "
             "summarizing whole tables (e.g. --query 'SELECT id, name FROM "
-            "users WHERE active = 1'). SELECT-only; no mutations."
+            "users WHERE active = 1'). SELECT-only (including `WITH ... "
+            "SELECT` CTEs); no mutations. Cannot be combined with "
+            "--table/--all-tables/--columns — the query already selects its "
+            "own tables and columns."
         ),
     )
 

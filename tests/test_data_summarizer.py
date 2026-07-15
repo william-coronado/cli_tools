@@ -209,6 +209,93 @@ class TestSQLiteQuery:
         with pytest.raises(ValueError, match="SELECT"):
             _summarize(multi_table_sqlite, query="INSERT INTO users VALUES (4, 'dave', 1)")
 
+    def test_cte_select_allowed(self, multi_table_sqlite):
+        r = _summarize(
+            multi_table_sqlite,
+            query=(
+                "WITH active_users AS (SELECT * FROM users WHERE active = 1) "
+                "SELECT id, name FROM active_users"
+            ),
+        )
+        assert r.tables[0].row_count == 2
+
+    def test_recursive_cte_select_allowed(self, multi_table_sqlite):
+        r = _summarize(
+            multi_table_sqlite,
+            query=(
+                "WITH RECURSIVE counter(n) AS ("
+                "SELECT 1 UNION ALL SELECT n + 1 FROM counter WHERE n < 5"
+                ") SELECT n FROM counter"
+            ),
+        )
+        assert r.tables[0].row_count == 5
+
+    def test_multiple_ctes_select_allowed(self, multi_table_sqlite):
+        r = _summarize(
+            multi_table_sqlite,
+            query=(
+                "WITH a AS (SELECT id FROM users), "
+                "b AS (SELECT user_id FROM orders) "
+                "SELECT * FROM a JOIN b ON a.id = b.user_id"
+            ),
+        )
+        assert r.tables[0].row_count == 10
+
+    def test_cte_insert_rejected(self, multi_table_sqlite):
+        # SQLite supports data-modifying statements inside a WITH prefix;
+        # the validator must look past the CTE definitions to the final
+        # statement, not just check the leading "WITH" keyword.
+        with pytest.raises(ValueError, match="SELECT"):
+            _summarize(
+                multi_table_sqlite,
+                query=(
+                    "WITH x AS (SELECT id FROM users) "
+                    "INSERT INTO users SELECT * FROM x"
+                ),
+            )
+
+    def test_leading_comment_before_select_allowed(self, multi_table_sqlite):
+        r = _summarize(
+            multi_table_sqlite,
+            query="-- just users\nSELECT id FROM users",
+        )
+        assert r.tables[0].row_count == 3
+
+    def test_block_comment_before_select_allowed(self, multi_table_sqlite):
+        r = _summarize(
+            multi_table_sqlite,
+            query="/* comment */ SELECT id FROM users",
+        )
+        assert r.tables[0].row_count == 3
+
+    def test_pragma_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="SELECT"):
+            _summarize(multi_table_sqlite, query="PRAGMA table_info(users)")
+
+    def test_query_with_tables_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="cannot be combined"):
+            _summarize(
+                multi_table_sqlite,
+                query="SELECT * FROM users",
+                tables=["users"],
+            )
+
+    def test_query_with_all_tables_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="cannot be combined"):
+            _summarize(
+                multi_table_sqlite,
+                query="SELECT * FROM users",
+                all_tables=True,
+            )
+
+    def test_query_with_columns_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="cannot be combined"):
+            _summarize(
+                multi_table_sqlite,
+                query="SELECT * FROM users",
+                columns=["id"],
+            )
+
 
 # ── Statistics ────────────────────────────────────────────────────────────────
 
@@ -460,3 +547,15 @@ class TestMCPWrapper:
         })
         assert "**Rows:** 2" in result
         assert "alice" in result and "carol" not in result
+
+    def test_query_and_table_together_rejected(self, multi_table_sqlite):
+        # The MCP layer must surface the same mutual-exclusion contract as
+        # the CLI/reader: query wins the ambiguity by raising, not by
+        # silently ignoring `table`.
+        from data_summarizer.mcp_tool import _handle
+        with pytest.raises(ValueError, match="cannot be combined"):
+            _handle({
+                "path": str(multi_table_sqlite),
+                "table": "users",
+                "query": "SELECT * FROM users",
+            })
