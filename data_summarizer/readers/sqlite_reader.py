@@ -32,31 +32,36 @@ class SQLiteReader(Reader):
             raise ValueError(f"Failed to open SQLite database: {e}")
 
         try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' "
-                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-            )
-            all_tables = [row[0] for row in cur.fetchall()]
-
-            if opts.tables:
-                selected = [t for t in all_tables if t in opts.tables]
-                missing = [t for t in opts.tables if t not in all_tables]
-                if missing:
-                    warnings.append(f"Tables not found: {', '.join(missing)}")
+            if opts.query:
+                _validate_select_only(opts.query)
+                tables = [self._summarize_query(conn, opts.query, opts)]
             else:
-                selected = all_tables
-
-            if not opts.all_tables and len(selected) > opts.max_tables:
-                warnings.append(
-                    f"Showing first {opts.max_tables} of {len(selected)} tables "
-                    f"(use --all-tables or --max-tables to change)"
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name NOT LIKE 'sqlite_%' ORDER BY name"
                 )
-                selected = selected[: opts.max_tables]
+                all_tables = [row[0] for row in cur.fetchall()]
 
-            tables: list[TableSummary] = []
-            for table_name in selected:
-                tables.append(self._summarize_table(conn, table_name, opts))
+                if opts.tables:
+                    selected = [t for t in all_tables if t in opts.tables]
+                    missing = [t for t in opts.tables if t not in all_tables]
+                    if missing:
+                        warnings.append(f"Tables not found: {', '.join(missing)}")
+                else:
+                    selected = all_tables
+
+                if not opts.all_tables and len(selected) > opts.max_tables:
+                    warnings.append(
+                        f"Showing first {opts.max_tables} of {len(selected)} tables "
+                        f"(use --all-tables or --max-tables to change)"
+                    )
+                    selected = selected[: opts.max_tables]
+
+                tables = [
+                    self._summarize_table(conn, table_name, opts)
+                    for table_name in selected
+                ]
         finally:
             conn.close()
 
@@ -68,6 +73,123 @@ class SQLiteReader(Reader):
             backend_used="stdlib-sqlite3",
             tables=tables,
             warnings=warnings,
+        )
+
+    def _summarize_query(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        opts: SummarizerOptions,
+    ) -> TableSummary:
+        cur = conn.cursor()
+        try:
+            cur.execute(query)
+        except sqlite3.Error as e:
+            raise ValueError(f"Query failed: {e}") from e
+        col_names = [d[0] for d in cur.description] if cur.description else []
+
+        if not col_names:
+            return TableSummary(
+                name="query result",
+                row_count=0,
+                column_count=0,
+                columns=[],
+                stats=[],
+                head=[],
+                tail=[],
+                notes=["Query returned no columns"],
+            )
+
+        col_names = col_names[: opts.max_columns]
+
+        accumulators: dict[str, ColumnAccumulator] = {
+            n: ColumnAccumulator(
+                name=n,
+                max_distinct=opts.max_distinct,
+                keep_samples_for_median=opts.median,
+            )
+            for n in col_names
+        }
+
+        head_rows: list[dict[str, Any]] = []
+        tail_maxlen = opts.sample_tail if (not opts.no_sample and opts.sample_tail > 0) else 0
+        tail_buf: deque[dict[str, Any]] = deque(maxlen=tail_maxlen) if tail_maxlen else deque()
+
+        rows_scanned = 0
+        truncated = False
+        for row in cur:
+            if rows_scanned >= opts.max_rows:
+                truncated = True
+                break
+            rows_scanned += 1
+            row_dict: dict[str, Any] = {}
+            for i, name in enumerate(col_names):
+                val = row[i]
+                row_dict[name] = val
+                accumulators[name].update(val)
+
+            if not opts.no_sample:
+                if len(head_rows) < opts.sample_head:
+                    head_rows.append(row_dict)
+                if tail_maxlen:
+                    tail_buf.append(row_dict)
+
+        columns: list[ColumnInfo] = []
+        stats: list[ColumnStats] = []
+        for name in col_names:
+            acc = accumulators[name]
+            dtype = acc.dtype()
+            columns.append(
+                ColumnInfo(
+                    name=name,
+                    dtype=dtype,
+                    nullable=acc.null_count > 0,
+                    null_count=acc.null_count,
+                    null_pct=acc.null_pct(),
+                    distinct_count=acc.distinct_count,
+                )
+            )
+            if not opts.no_stats:
+                top_vals = (
+                    acc.top_values(opts.top_k)
+                    if dtype not in ("int", "float", "datetime", "null")
+                    else []
+                )
+                stats.append(
+                    ColumnStats(
+                        name=name,
+                        count=acc.count,
+                        null_count=acc.null_count,
+                        distinct_count=acc.distinct_count,
+                        min=acc.min_val,
+                        max=acc.max_val,
+                        mean=acc.mean,
+                        median=acc.median if opts.median else None,
+                        std=acc.std,
+                        min_date=acc.min_dt,
+                        max_date=acc.max_dt,
+                        top_values=top_vals,
+                    )
+                )
+
+        tail_rows = list(tail_buf)
+        if head_rows and tail_rows and rows_scanned <= opts.sample_head + len(tail_rows):
+            tail_rows = []
+
+        notes: list[str] = []
+        if truncated:
+            notes.append(f"Row scan capped at {opts.max_rows:,} rows (use --max-rows to change)")
+
+        return TableSummary(
+            name="query result",
+            row_count=rows_scanned,
+            column_count=len(col_names),
+            columns=columns,
+            stats=stats,
+            head=head_rows,
+            tail=tail_rows,
+            truncated=truncated,
+            notes=notes,
         )
 
     def _summarize_table(
@@ -206,6 +328,21 @@ class SQLiteReader(Reader):
             tail=tail_rows,
             truncated=truncated,
             notes=notes,
+        )
+
+
+def _validate_select_only(query: str) -> None:
+    stripped = query.strip()
+    if not stripped:
+        raise ValueError("--query must not be empty")
+    # Reject multiple statements (a trailing semicolon on the last statement is fine).
+    body = stripped[:-1] if stripped.endswith(";") else stripped
+    if ";" in body:
+        raise ValueError("--query must be a single SELECT statement")
+    if not stripped.lower().startswith("select"):
+        raise ValueError(
+            "--query only supports SELECT statements; this suite is a "
+            "read-only pre-processor, not a database admin tool"
         )
 
 

@@ -14,6 +14,7 @@ def _handle(params: dict) -> str:
         columns=params.get("columns"),
         tables=[params["table"]] if params.get("table") else None,
         format_hint=params.get("format_hint"),
+        query=params.get("query"),
     )
     result = DataSummarizer(opts).summarize(path)
     return result.to_markdown()

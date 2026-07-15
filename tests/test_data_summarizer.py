@@ -150,6 +150,66 @@ class TestSQLiteReader:
         assert by_name == {"users": 3, "orders": 10, "events": 30}
 
 
+class TestSQLiteQuery:
+    def test_select_returns_single_result(self, multi_table_sqlite):
+        r = _summarize(multi_table_sqlite, query="SELECT id, name FROM users WHERE active = 1")
+        assert len(r.tables) == 1
+        assert r.tables[0].name == "query result"
+        assert r.tables[0].row_count == 2
+        assert [c.name for c in r.tables[0].columns] == ["id", "name"]
+
+    def test_select_join(self, multi_table_sqlite):
+        r = _summarize(
+            multi_table_sqlite,
+            query=(
+                "SELECT u.name, o.amount FROM users u "
+                "JOIN orders o ON o.user_id = u.id"
+            ),
+        )
+        assert r.tables[0].row_count == 10
+
+    def test_max_rows_truncates_query(self, multi_table_sqlite):
+        r = _summarize(multi_table_sqlite, query="SELECT * FROM events", max_rows=5)
+        assert r.tables[0].row_count == 5
+        assert r.tables[0].truncated is True
+
+    def test_non_select_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="SELECT"):
+            _summarize(multi_table_sqlite, query="DELETE FROM users")
+
+    def test_update_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="SELECT"):
+            _summarize(multi_table_sqlite, query="UPDATE users SET active = 0")
+
+    def test_multi_statement_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError, match="single SELECT"):
+            _summarize(
+                multi_table_sqlite,
+                query="SELECT * FROM users; DELETE FROM users",
+            )
+
+    def test_empty_query_rejected(self, multi_table_sqlite):
+        with pytest.raises(ValueError):
+            _summarize(multi_table_sqlite, query="   ")
+
+    def test_trailing_semicolon_allowed(self, multi_table_sqlite):
+        r = _summarize(multi_table_sqlite, query="SELECT id FROM users;")
+        assert r.tables[0].row_count == 3
+
+    def test_bad_table_name_raises_clean_error(self, multi_table_sqlite):
+        # A syntactically valid SELECT that fails at execution (unknown table)
+        # must surface as a clean ValueError, not a raw sqlite3 traceback.
+        with pytest.raises(ValueError, match="Query failed"):
+            _summarize(multi_table_sqlite, query="SELECT * FROM nonexistent_table")
+
+    def test_writeable_db_still_rejects_mutation(self, multi_table_sqlite):
+        # Defense in depth: even though the connection is opened mode=ro
+        # (which would itself reject a write), the query validator should
+        # reject non-SELECT statements before ever touching sqlite3.
+        with pytest.raises(ValueError, match="SELECT"):
+            _summarize(multi_table_sqlite, query="INSERT INTO users VALUES (4, 'dave', 1)")
+
+
 # ── Statistics ────────────────────────────────────────────────────────────────
 
 class TestStatistics:
@@ -391,3 +451,12 @@ class TestMCPWrapper:
         from data_summarizer.mcp_tool import _handle
         with pytest.raises(Exception):
             _handle({"path": "/no/such/file.csv"})
+
+    def test_query_param_passthrough(self, multi_table_sqlite):
+        from data_summarizer.mcp_tool import _handle
+        result = _handle({
+            "path": str(multi_table_sqlite),
+            "query": "SELECT id, name FROM users WHERE active = 1",
+        })
+        assert "**Rows:** 2" in result
+        assert "alice" in result and "carol" not in result

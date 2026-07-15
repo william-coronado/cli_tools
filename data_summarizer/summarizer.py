@@ -99,6 +99,7 @@ class SummarizerOptions:
     columns: list[str] | None = None
     tables: list[str] | None = None
     format_hint: str | None = None
+    query: str | None = None
 
 
 class DataSummarizer:
