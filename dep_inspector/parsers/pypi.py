@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..inspector import Dependency, EcosystemReport, InspectorOptions
+from .base import is_requirements_txt
 
 try:
     import tomllib  # py 3.11+
@@ -29,7 +30,7 @@ def parse_pypi(files: dict, opts: InspectorOptions) -> EcosystemReport:
         if manifest.name == "pyproject.toml":
             declared, project_notes = _parse_pyproject(manifest, opts)
             notes.extend(project_notes)
-        elif manifest.name == "requirements.txt":
+        elif is_requirements_txt(manifest.name):
             declared, req_notes = _parse_requirements(manifest, depth=0)
             notes.extend(req_notes)
         elif manifest.name == "Pipfile":
