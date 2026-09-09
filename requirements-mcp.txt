@@ -1,5 +1,12 @@
 # Dependency for the unified MCP server (mcp_server.py).
 # The individual CLI tools do not need this; only the MCP front door does.
 # Floor closes CVE-2025-66416 (DNS-rebinding gap on HTTP/SSE transports), fixed in 1.23.0.
+# Also closes CVE-2026-52870/GHSA-hvrp-rf83-w775 (cross-session task leakage/cancel),
+# CVE-2026-52869/GHSA-jpw9-pfvf-9f58 (session hijack via guessed session ID on
+# SSE/Streamable HTTP), fixed in 1.27.2, and CVE-2026-59950/GHSA-vj7q-gjh5-988w
+# (WebSocket transport missing Host/Origin validation), fixed in 1.28.1.
 # Low risk here since this server runs stdio-only, but cheap to stay patched.
-mcp>=1.23.0
+# Pinned below 2.0.0: that release removes mcp.server.fastmcp.FastMCP (relocated/
+# renamed to mcp.server.mcpserver.MCPServer with a different constructor), which
+# mcp_server.py imports directly.
+mcp>=1.29.0,<2.0.0
