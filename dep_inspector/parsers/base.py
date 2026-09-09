@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -9,6 +10,17 @@ class MissingOptionalDep(RuntimeError):
 
 class WrongContentType(RuntimeError):
     """Raised when no supported manifest is found."""
+
+
+# Matches requirements.txt and common variants: requirements-dev.txt,
+# requirements_test.txt, dev-requirements.txt, requirements-mcp.txt, etc.
+_REQUIREMENTS_TXT_RE = re.compile(
+    r"^(requirements[-_].+|.+[-_]requirements|requirements)\.txt$"
+)
+
+
+def is_requirements_txt(name: str) -> bool:
+    return bool(_REQUIREMENTS_TXT_RE.match(name))
 
 
 # Files that trigger ecosystem detection at a project root
@@ -59,7 +71,7 @@ def _detect_npm(root: Path) -> dict | None:
 
 def _ecosystem_for_file(path: Path) -> str | None:
     name = path.name
-    if name in PYPI_MANIFESTS or name in PYPI_LOCKFILES:
+    if name in PYPI_MANIFESTS or name in PYPI_LOCKFILES or is_requirements_txt(name):
         return "pypi"
     if name in NPM_MANIFESTS or name in NPM_LOCKFILES:
         return "npm"

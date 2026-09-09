@@ -97,6 +97,22 @@ class TestPyPIParsers:
         if django.declared:
             assert ";" not in django.declared
 
+    @pytest.mark.parametrize(
+        "filename",
+        ["requirements-mcp.txt", "requirements-dev.txt", "dev-requirements.txt"],
+    )
+    def test_non_standard_requirements_filename_parsed(self, tmp_path, filename):
+        # A requirements file not literally named "requirements.txt" must still
+        # be parsed as a manifest, both via ecosystem detection and by parse_pypi,
+        # instead of silently yielding zero deps.
+        f = tmp_path / filename
+        f.write_text("mcp>=1.23.0\n")
+        ecos = detect_ecosystems(f, None)
+        assert [e for e, _ in ecos] == ["pypi"]
+        r = _inspect(f)
+        names = {d.name for d in r.ecosystems[0].direct_deps}
+        assert names == {"mcp"}
+
 
 # ── npm parsers ──────────────────────────────────────────────────────────────
 
