@@ -2,6 +2,12 @@ httpx>=0.27.0
 trafilatura>=1.9.0
 readability-lxml>=0.8.4.1
 beautifulsoup4>=4.12.0
+# soupsieve is a transitive dep of beautifulsoup4, but beautifulsoup4's own floor
+# (soupsieve>=1.6.1) does not guarantee a patched version. Pinned directly to close
+# CVE-2026-49476 (unbounded memory allocation compiling comma-separated selector
+# lists) and CVE-2026-49477 (ReDoS via an unterminated quoted attribute selector),
+# both fixed in 2.8.4. Not imported directly by this package.
+soupsieve>=2.8.4
 lxml>=6.1.1
 # Floor closes CVE-2025-46656 (DoS), fixed in 0.14.1.
 markdownify>=0.14.1
